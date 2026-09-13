@@ -1,6 +1,6 @@
 {
   "name": "antigravity-nvr",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Node.js Lightweight Network Video Recorder with Single Ingestion, Dynamic Two-Stage AI, and Zero-Config UX",
   "main": "dist/index.js",
   "scripts": {
