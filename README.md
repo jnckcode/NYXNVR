@@ -120,24 +120,29 @@ Sistem secara *real-time* menghitung *rolling average* durasi inferensi AI dan r
 
 NYX NVR mendukung **SEMUA MERK KAMERA IP & CCTV** di pasaran yang memiliki fitur **RTSP** (*Real-Time Streaming Protocol*) atau **ONVIF** standar industri. 
 
+> 💡 **CATATAN PENTING TENTANG PORT RTSP:**
+> - Port standar resmi protokol RTSP adalah **`554`**. Karena sudah menjadi standar default, **penulisan `:554` pada URL bersifat opsional** (contoh: `rtsp://192.168.1.7/live/ch00_0` akan otomatis terhubung ke port 554 tanpa harus mengetik `:554`).
+> - Jika kamera Anda dikonfigurasi menggunakan port khusus/custom (seperti `8554`, `5544`, dll.), barulah nomor port wajib dicantumkan secara eksplisit (contoh: `rtsp://192.168.1.7:8554/live/ch00_0`).
+> - Jika kamera tidak menggunakan password, bagian `admin:password@` dapat langsung dihilangkan.
+
 Berikut panduan format URL RTSP untuk merk-merk CCTV populer:
 
 ### 📑 Cheat Sheet URL RTSP Kamera Populer
 
-| Merk CCTV | Format URL RTSP Standar | Catatan & Tips Konfigurasi |
-|---|---|---|
-| **V380 / V380 Pro** | `rtsp://admin:password@<IP_CCTV>:554/live/ch0` <br>atau port `8554` | Pada beberapa model V380, fitur RTSP harus diaktifkan melalui aplikasi V380 Pro di menu *Network Settings* atau menggunakan firmware RTSP. |
-| **Franwell / Bardi / Tuya / Smart Life** | `rtsp://admin:password@<IP_CCTV>:554/live/ch0` <br>atau `rtsp://<IP_CCTV>:8554/live/ch0` | Pada aplikasi Smart Life / Tuya, aktifkan fitur *PC View / ONVIF* pada pengaturan kamera untuk membuat username & password RTSP. |
-| **TP-Link Tapo** (C200, C310, TC70, dll.) | `rtsp://username:password@<IP_CCTV>:554/stream1` | Buat akun kamera di aplikasi Tapo: *Settings* -> *Advanced Settings* -> *Camera Account*. Gunakan `stream1` (HD) atau `stream2` (SD). |
-| **Ezviz & Hikvision** | `rtsp://admin:VERIFIKASI@<IP_CCTV>:554/H.264/ch1/main/av_stream` | Password bawaan Ezviz adalah **Kode Verifikasi 6 huruf kapital** yang tertera di stiker fisik bawah kamera. |
-| **Dahua & Imou** (Ranger, Cue, Bullet) | `rtsp://admin:SAFETY_CODE@<IP_CCTV>:554/cam/realmonitor?channel=1&subtype=0` | Password default Imou adalah **Safety Code** pada label stiker kamera. `subtype=0` untuk Main Stream, `subtype=1` untuk Sub Stream. |
-| **Xiaomi / Yi Home** | `rtsp://<IP_CCTV>:554/ch0_0.h264` | Memerlukan firmware modifikasi open-source (*Yi-Hack* / *Xiaomi-Hack*) agar port RTSP terbuka. |
-| **DVR / NVR Standalone** (Generic H.264) | `rtsp://admin:password@<IP_DVR>:554/h264/ch1/main/av_stream` | Ganti `ch1` sesuai nomor channel kamera yang ingin ditarik. |
+| Merk CCTV | Format URL RTSP Standar / Rekomendasi | Alternatif / Port Khusus | Catatan & Tips Konfigurasi |
+|---|---|---|---|
+| **V380 / V380 Pro / Macro-video** | `rtsp://<IP_CCTV>/live/ch00_0`<br>*(atau `rtsp://admin:pass@<IP_CCTV>/live/ch00_0`)* | `rtsp://<IP_CCTV>:554/live/ch0`<br>atau port `8554` | Format `ch00_0` adalah jalur Main Stream HD aktif bawaan firmware V380 Pro/Macro-video ODM. Port `:554` tidak wajib ditulis. |
+| **Franwell / Bardi / Tuya / Smart Life** | `rtsp://<IP_CCTV>/live/ch0`<br>*(atau `rtsp://admin:pass@<IP_CCTV>/live/ch0`)* | `rtsp://<IP_CCTV>:8554/live/ch0` | Pada aplikasi Smart Life / Tuya / Bardi, aktifkan fitur *PC View / ONVIF* pada menu kamera untuk mengaktifkan akses RTSP. |
+| **TP-Link Tapo** (C200, C310, TC70, dll.) | `rtsp://username:password@<IP_CCTV>/stream1` | `rtsp://username:password@<IP_CCTV>:554/stream2` | Buat akun kamera di aplikasi Tapo (*Settings* -> *Advanced Settings* -> *Camera Account*). Gunakan `stream1` (HD) atau `stream2` (SD). |
+| **Ezviz & Hikvision** | `rtsp://admin:VERIFIKASI@<IP_CCTV>/H.264/ch1/main/av_stream` | `rtsp://admin:VERIFIKASI@<IP_CCTV>:554/h264/ch1/sub/av_stream` | Password bawaan Ezviz adalah **Kode Verifikasi 6 huruf kapital** pada stiker fisik di bagian bawah kamera. |
+| **Dahua & Imou** (Ranger, Cue, Bullet) | `rtsp://admin:SAFETY_CODE@<IP_CCTV>/cam/realmonitor?channel=1&subtype=0` | `rtsp://admin:SAFETY_CODE@<IP_CCTV>:554/cam/realmonitor?channel=1&subtype=1` | Password default Imou adalah **Safety Code** pada label stiker kamera. `subtype=0` untuk Main Stream, `subtype=1` untuk Sub Stream. |
+| **Xiaomi / Yi Home** | `rtsp://<IP_CCTV>/ch0_0.h264` | `rtsp://<IP_CCTV>:554/ch0_0.h264` | Memerlukan firmware modifikasi open-source (*Yi-Hack* / *Xiaomi-Hack*) agar port RTSP terbuka. |
+| **DVR / NVR Standalone** (Generic H.264) | `rtsp://admin:password@<IP_DVR>/h264/ch1/main/av_stream` | `rtsp://admin:password@<IP_DVR>:554/h264/ch1/main/av_stream` | Ganti `ch1` sesuai nomor channel kamera yang ingin ditarik dari DVR/NVR. |
 
-> 💡 **TIPS MENGETAHUI IP ADDRESS KAMERA CCTV ANDA:**
+> 💡 **TIPS MENGETAHUI IP ADDRESS & MENGETES STREAM KAMERA:**
 > 1. Buka dashboard modem/router Wi-Fi Anda (biasanya `192.168.1.1` atau `192.168.0.1`), lalu cek menu **DHCP Client List**.
-> 2. Atau gunakan aplikasi HP gratis seperti **Fing** (Android/iOS) untuk memindai perangkat yang terhubung di jaringan Wi-Fi Anda.
-> 3. Coba tes URL RTSP terlebih dahulu di software **VLC Media Player** di komputer: Buka menu *Media* -> *Open Network Stream* -> Tempel URL RTSP Anda. Jika video tampil lancar di VLC, berarti URL tersebut 100% siap dipakai di NYX NVR!
+> 2. Atau gunakan aplikasi HP gratis seperti **Fing** (Android/iOS) untuk memindai IP perangkat di jaringan lokal.
+> 3. Coba tes URL RTSP terlebih dahulu di software **VLC Media Player** di komputer: Buka menu *Media* -> *Open Network Stream* -> Tempel URL RTSP Anda (misal: `rtsp://192.168.1.7/live/ch00_0`). Jika video tampil lancar di VLC, berarti URL tersebut 100% siap dipakai di NYX NVR!
 
 ---
 
