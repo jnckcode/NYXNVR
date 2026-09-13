@@ -20,6 +20,7 @@ const logger = createLogger('Bootstrap');
 async function bootstrap(): Promise<void> {
   logger.info('====================================================');
   logger.info(`   ${SYSTEM_CONSTANTS.APP_NAME} v${SYSTEM_CONSTANTS.APP_VERSION} INITIALIZING`);
+  logger.info('   Optimized: Lightweight | Stable | High Accuracy');
   logger.info('   Target Hardware: ARM64 STB HG680-P (RAM 2GB)');
   logger.info('====================================================');
 
@@ -50,8 +51,8 @@ async function bootstrap(): Promise<void> {
     await streamManager.startAllEnabledStreams();
 
     logger.info('====================================================');
-    logger.info(`   ${SYSTEM_CONSTANTS.APP_NAME} IS RUNNING AND READY!`);
-    logger.info(`   Web Dashboard: http://localhost:${actualPort}${portShifted ? ` (auto-shifted from ${desiredPort})` : ''}`);
+    logger.info(`   ${SYSTEM_CONSTANTS.APP_NAME} v${SYSTEM_CONSTANTS.APP_VERSION} IS RUNNING!`);
+    logger.info(`   Dashboard: http://localhost:${actualPort}${portShifted ? ` (shifted from ${desiredPort})` : ''}`);
     logger.info('====================================================');
 
     // Handle process signals for safe teardown

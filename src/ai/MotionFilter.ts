@@ -1,8 +1,15 @@
 /**
  * @file MotionFilter.ts
- * @description Stage 1 Motion Detection Engine performing micro-scale (160x120) pixel differencing with ROI polygon masking.
+ * @description Stage 1 Motion Detection Engine with internal downscale optimization.
+ * 
+ * Accepts full-resolution frames (640×360 RGB24) from FFmpeg pipe:3, internally
+ * downscales to 160×120 grayscale for ultra-fast pixel differencing, then applies
+ * ROI polygon masking.
+ * 
+ * Performance: 19,200 pixel comparisons instead of 230,400 = 12× faster per frame.
+ * 
  * @functions processFrame, setROIConfig, reset, isPointInPolygon
- * @dependencies types/camera, types/event, constants, logger
+ * @dependencies types/camera, constants, logger
  */
 
 import { ROIConfig, ROIPoint } from '../types/camera';
@@ -12,22 +19,30 @@ import { createLogger } from '../utils/logger';
 const logger = createLogger('MotionFilter');
 
 export class MotionFilter {
-  private width: number;
-  private height: number;
+  /** Input frame dimensions (from FFmpeg pipe:3) */
+  private inputWidth: number;
+  private inputHeight: number;
+
+  /** Internal motion detection dimensions (downscaled for speed) */
+  private detectWidth: number;
+  private detectHeight: number;
+
   private previousFrame: Uint8Array | null = null;
   private roiConfig: ROIConfig | null = null;
   private roiMask: Uint8Array | null = null;
   private thresholdPercent: number;
-  private pixelThreshold: number; // minimum brightness delta to count as changed pixel
+  private pixelThreshold: number;
 
   constructor(
-    width: number = SYSTEM_CONSTANTS.STAGE1_FRAME_WIDTH,
-    height: number = SYSTEM_CONSTANTS.STAGE1_FRAME_HEIGHT,
+    inputWidth: number = SYSTEM_CONSTANTS.STAGE1_FRAME_WIDTH,
+    inputHeight: number = SYSTEM_CONSTANTS.STAGE1_FRAME_HEIGHT,
     thresholdPercent: number = SYSTEM_CONSTANTS.STAGE1_MOTION_THRESHOLD_PERCENT,
     pixelThreshold: number = 14
   ) {
-    this.width = width;
-    this.height = height;
+    this.inputWidth = inputWidth;
+    this.inputHeight = inputHeight;
+    this.detectWidth = SYSTEM_CONSTANTS.MOTION_DETECT_WIDTH;
+    this.detectHeight = SYSTEM_CONSTANTS.MOTION_DETECT_HEIGHT;
     this.thresholdPercent = thresholdPercent;
     this.pixelThreshold = pixelThreshold;
   }
@@ -42,6 +57,7 @@ export class MotionFilter {
 
   /**
    * Sets or updates the ROI polygon mask configuration.
+   * Mask is generated at detectWidth×detectHeight resolution.
    */
   public setROIConfig(config: ROIConfig | null): void {
     this.roiConfig = config;
@@ -56,20 +72,22 @@ export class MotionFilter {
   }
 
   /**
-   * Generates a 1D binary mask array for 160x120 grid based on normalized ROI polygons.
+   * Generates a 1D binary mask at detect resolution based on normalized ROI polygons.
    */
   private generateRoiMask(): Uint8Array | null {
     if (!this.roiConfig || !this.roiConfig.enabled || !this.roiConfig.polygons || this.roiConfig.polygons.length === 0) {
       return null;
     }
 
-    const mask = new Uint8Array(this.width * this.height);
+    const w = this.detectWidth;
+    const h = this.detectHeight;
+    const mask = new Uint8Array(w * h);
     let totalActivePixels = 0;
 
-    for (let y = 0; y < this.height; y++) {
-      const normalizedY = y / this.height;
-      for (let x = 0; x < this.width; x++) {
-        const normalizedX = x / this.width;
+    for (let y = 0; y < h; y++) {
+      const normalizedY = y / h;
+      for (let x = 0; x < w; x++) {
+        const normalizedX = x / w;
         const point: ROIPoint = { x: normalizedX, y: normalizedY };
 
         let insideAny = false;
@@ -80,13 +98,13 @@ export class MotionFilter {
           }
         }
 
-        const idx = y * this.width + x;
+        const idx = y * w + x;
         mask[idx] = insideAny ? 1 : 0;
         if (insideAny) totalActivePixels++;
       }
     }
 
-    logger.debug(`ROI Mask created with ${totalActivePixels}/${this.width * this.height} active pixels.`);
+    logger.debug(`ROI Mask created at ${w}×${h} with ${totalActivePixels}/${w * h} active pixels.`);
     return mask;
   }
 
@@ -108,22 +126,61 @@ export class MotionFilter {
   }
 
   /**
-   * Processes a raw RGB/Grayscale frame buffer (160x120) and returns motion metrics.
-   * @param rawBuffer Uint8Array or Buffer of raw grayscale or RGB24 frame data.
+   * Downscales a full-resolution RGB24 frame to detect-resolution grayscale using nearest-neighbor sampling.
+   * This is the core optimization: 640×360 RGB → 160×120 grayscale = 12× fewer pixels to diff.
    */
-  public processFrame(rawBuffer: Buffer | Uint8Array, isRgb: boolean = false): { hasMotion: boolean; score: number } {
-    const totalPixels = this.width * this.height;
-    const currentGrayscale = new Uint8Array(totalPixels);
+  private downscaleToGrayscale(rawBuffer: Buffer | Uint8Array, isRgb: boolean): Uint8Array {
+    const dw = this.detectWidth;
+    const dh = this.detectHeight;
+    const iw = this.inputWidth;
+    const ih = this.inputHeight;
+    const result = new Uint8Array(dw * dh);
 
-    // Convert to grayscale if RGB
+    // Calculate step ratios for nearest-neighbor downscale
+    const xStep = iw / dw;
+    const yStep = ih / dh;
+
     if (isRgb) {
-      for (let i = 0, j = 0; i < totalPixels; i++, j += 3) {
-        // Fast luminance approximation: 0.299R + 0.587G + 0.114B ≈ (R*77 + G*150 + B*29) >> 8
-        currentGrayscale[i] = (rawBuffer[j] * 77 + rawBuffer[j + 1] * 150 + rawBuffer[j + 2] * 29) >> 8;
+      // RGB24 input: 3 bytes per pixel
+      for (let dy = 0; dy < dh; dy++) {
+        const srcY = Math.min(ih - 1, (dy * yStep) | 0);
+        const srcRow = srcY * iw * 3;
+        const dstRow = dy * dw;
+
+        for (let dx = 0; dx < dw; dx++) {
+          const srcX = Math.min(iw - 1, (dx * xStep) | 0);
+          const srcIdx = srcRow + srcX * 3;
+
+          // Fast luminance: (R*77 + G*150 + B*29) >> 8
+          result[dstRow + dx] = (rawBuffer[srcIdx] * 77 + rawBuffer[srcIdx + 1] * 150 + rawBuffer[srcIdx + 2] * 29) >> 8;
+        }
       }
     } else {
-      currentGrayscale.set(rawBuffer.subarray(0, totalPixels));
+      // Grayscale input: 1 byte per pixel
+      for (let dy = 0; dy < dh; dy++) {
+        const srcY = Math.min(ih - 1, (dy * yStep) | 0);
+        const srcRow = srcY * iw;
+        const dstRow = dy * dw;
+
+        for (let dx = 0; dx < dw; dx++) {
+          const srcX = Math.min(iw - 1, (dx * xStep) | 0);
+          result[dstRow + dx] = rawBuffer[srcRow + srcX];
+        }
+      }
     }
+
+    return result;
+  }
+
+  /**
+   * Processes a raw RGB/Grayscale frame and returns motion metrics.
+   * Input: Full resolution frame from FFmpeg pipe:3 (e.g. 640×360 RGB24)
+   * Internal: Downscaled to 160×120 grayscale for ultra-fast differencing
+   */
+  public processFrame(rawBuffer: Buffer | Uint8Array, isRgb: boolean = false): { hasMotion: boolean; score: number } {
+    // Downscale input to detect resolution for fast pixel diffing
+    const currentGrayscale = this.downscaleToGrayscale(rawBuffer, isRgb);
+    const totalPixels = this.detectWidth * this.detectHeight;
 
     if (!this.previousFrame) {
       this.previousFrame = currentGrayscale;

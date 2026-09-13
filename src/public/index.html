@@ -130,6 +130,12 @@
             <div class="metric-bar-fill" id="sb-disk-bar" style="width: 0%"></div>
           </div>
         </div>
+        <div class="telemetry-metric">
+          <div class="metric-meta">
+            <span>GOVERNOR</span>
+            <span id="sb-gov-val" class="font-mono" style="color: #10b981; font-weight: 600;">🟢 PERFORMANCE</span>
+          </div>
+        </div>
         <div class="telemetry-engine">
           <span class="engine-dot"></span>
           <span class="engine-label">AI Engine: <strong id="sb-ai-engine">YOLOv8 Active</strong></span>
@@ -545,12 +551,24 @@
               </div>
               <div class="card-body">
                 <form id="settings-ai-form" onsubmit="saveAiDetectionSettings(event)">
-                  <!-- Model Path -->
+                  <!-- Model Profile Selector -->
                   <div class="form-group">
-                    <label for="input-model-path">Active ONNX Model File Path</label>
+                    <label for="select-active-model">Active YOLOv8 ONNX Model Profile</label>
                     <div class="input-with-button">
-                      <input type="text" id="input-model-path" class="form-input" required placeholder="./models/yolov8n.onnx">
-                      <button type="button" class="btn btn-secondary" onclick="saveModelPathDirect()">Set Path</button>
+                      <select id="select-active-model" class="form-select" onchange="handleModelSelect(this.value)">
+                        <option value="">Scanning models directory...</option>
+                      </select>
+                      <button type="button" class="btn btn-secondary" onclick="fetchAvailableModels()">Refresh</button>
+                    </div>
+                    <span class="form-hint">Choose between <strong>FP32 Full-Precision (12.8MB)</strong> or <strong>INT8 Low-Power (3.2MB)</strong>. Hot-reloads instantly without restart.</span>
+                  </div>
+
+                  <!-- Custom Model Path Fallback -->
+                  <div class="form-group mt-3">
+                    <label for="input-model-path">Custom Model Absolute Path</label>
+                    <div class="input-with-button">
+                      <input type="text" id="input-model-path" class="form-input" placeholder="./models/yolov8n.onnx">
+                      <button type="button" class="btn btn-secondary" onclick="saveModelPathDirect()">Set Custom Path</button>
                     </div>
                   </div>
 

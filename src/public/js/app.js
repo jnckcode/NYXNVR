@@ -236,6 +236,22 @@ function handleServerEvent(msg) {
     }
   } else if (msg.type === 'STREAM_STATUS_CHANGED') {
     updateCameraCardStatus(msg.cameraId, msg.status);
+  } else if (msg.type === 'GOVERNOR_TIER_CHANGED') {
+    updateGovernorBadge(msg.metrics);
+  }
+}
+
+function updateGovernorBadge(metrics) {
+  const govVal = document.getElementById('sb-gov-val');
+  if (govVal && metrics) {
+    govVal.textContent = metrics.tierBadge || `🟢 ${metrics.tier}`;
+    if (metrics.tier === 'ECO') {
+      govVal.style.color = '#ef4444';
+    } else if (metrics.tier === 'BALANCED') {
+      govVal.style.color = '#f59e0b';
+    } else {
+      govVal.style.color = '#10b981';
+    }
   }
 }
 
@@ -1392,6 +1408,9 @@ async function loadSettings() {
       }
       renderClassPicker(targetClasses);
 
+      // Load available ONNX models for selector
+      fetchAvailableModels();
+
       updateDiskGauge(res.disk);
     }
   } catch (err) {
@@ -1756,6 +1775,51 @@ async function triggerManualPurge() {
   }
 }
 
+async function fetchAvailableModels() {
+  const selectEl = document.getElementById('select-active-model');
+  if (!selectEl) return;
+  try {
+    const res = await API.getAvailableModels();
+    if (res.success && Array.isArray(res.models)) {
+      selectEl.innerHTML = '';
+      if (res.models.length === 0) {
+        selectEl.innerHTML = '<option value="">No .onnx models found in models/ folder</option>';
+        return;
+      }
+      res.models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.filePath;
+        opt.textContent = `${m.displayName} [${m.precision}]`;
+        if (m.isActive) opt.selected = true;
+        selectEl.appendChild(opt);
+      });
+      const customInput = document.getElementById('input-model-path');
+      if (customInput && res.activeModelPath) {
+        customInput.value = res.activeModelPath;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch available models:', err.message);
+  }
+}
+
+async function handleModelSelect(modelPath) {
+  if (!modelPath) return;
+  try {
+    const res = await API.selectModel(modelPath);
+    if (res.success) {
+      showToast('Model switched: ' + (res.activeModelPath.split(/[\\/]/).pop()), 'success');
+      const customInput = document.getElementById('input-model-path');
+      if (customInput) customInput.value = res.activeModelPath;
+      fetchAvailableModels();
+    } else {
+      showToast(res.error || 'Failed to switch model', 'error');
+    }
+  } catch (err) {
+    showToast('Model selection error: ' + err.message, 'error');
+  }
+}
+
 async function handleModelUpload(input) {
   const file = input.files[0];
   if (!file) return;
@@ -1769,6 +1833,7 @@ async function handleModelUpload(input) {
       statusEl.innerHTML = `<span style="color: #34d399;">Model loaded: ${res.fileName} (Worker Hot-Reloaded!)</span>`;
       document.getElementById('input-model-path').value = res.modelPath;
       showToast('Custom ONNX model uploaded and hot-reloaded', 'success');
+      fetchAvailableModels();
     }
   } catch (err) {
     statusEl.innerHTML = `<span class="text-danger">Upload failed: ${err.message}</span>`;
@@ -1820,6 +1885,14 @@ async function pollSystemMetrics() {
         document.getElementById('diag-uptime').textContent = `${m.uptimeSeconds}s`;
       }
     }
+
+    // Also poll Load Governor telemetry
+    try {
+      const govRes = await API.getGovernorMetrics();
+      if (govRes.success && govRes.governor) {
+        updateGovernorBadge(govRes.governor);
+      }
+    } catch (e) {}
   } catch (err) {
     // Ignore
   }

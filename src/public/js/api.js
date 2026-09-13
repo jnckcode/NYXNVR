@@ -144,5 +144,24 @@ const API = {
   async getDiskMetrics() {
     const res = await fetch('/api/v1/system/disk');
     return res.json();
+  },
+
+  async getGovernorMetrics() {
+    const res = await fetch('/api/v1/system/governor');
+    return res.json();
+  },
+
+  async getAvailableModels() {
+    const res = await fetch('/api/v1/models');
+    return res.json();
+  },
+
+  async selectModel(modelPath) {
+    const res = await fetch('/api/v1/models/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modelPath })
+    });
+    return res.json();
   }
 };

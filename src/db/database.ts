@@ -30,7 +30,9 @@ export function getDatabase(): DatabaseType {
     dbInstance.pragma('foreign_keys = ON');
     dbInstance.pragma('synchronous = NORMAL');
     dbInstance.pragma('temp_store = MEMORY');
-    dbInstance.pragma('cache_size = -8000'); // 8MB memory cache
+    dbInstance.pragma('cache_size = -8000');    // 8MB memory cache
+    dbInstance.pragma('mmap_size = 67108864');  // 64MB memory-mapped I/O for faster reads
+    dbInstance.pragma('page_size = 4096');      // Optimal for SSD/SD card block alignment
   }
 
   return dbInstance;

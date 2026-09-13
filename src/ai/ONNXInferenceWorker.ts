@@ -7,6 +7,7 @@
 
 import { parentPort, isMainThread } from 'worker_threads';
 import fs from 'fs';
+import jpeg from 'jpeg-js';
 import { COCO_CLASSES, TARGET_SECURITY_CLASSES } from '../config/constants';
 
 let ort: any = null;
@@ -74,33 +75,46 @@ async function loadModelSession(modelPath: string): Promise<boolean> {
   }
 }
 
+interface PreprocessedImage {
+  tensor: any;
+  padX: number;
+  padY: number;
+  nw: number;
+  nh: number;
+}
+
 /**
- * Preprocesses RGB frame buffer into normalized float32 tensor [1, 3, 640, 640].
+ * Preprocesses RGB frame buffer with Letterboxing (preserves aspect ratio + 114 gray padding)
+ * into normalized float32 tensor [1, 3, 640, 640].
  */
 function preprocessFrame(
   rawBuffer: Buffer | Uint8Array,
   origWidth: number,
   origHeight: number,
   targetSize: number = 640
-): { tensor: any; scaleX: number; scaleY: number } {
-  const floatData = new Float32Array(3 * targetSize * targetSize);
-  const scaleX = origWidth / targetSize;
-  const scaleY = origHeight / targetSize;
+): PreprocessedImage {
+  const scale = Math.min(targetSize / origWidth, targetSize / origHeight);
+  const nw = Math.round(origWidth * scale);
+  const nh = Math.round(origHeight * scale);
+  const padX = Math.floor((targetSize - nw) / 2);
+  const padY = Math.floor((targetSize - nh) / 2);
 
   const totalPixels = targetSize * targetSize;
   const channelGOffset = totalPixels;
   const channelBOffset = totalPixels * 2;
+  const floatData = new Float32Array(3 * totalPixels).fill(114 / 255.0); // Standard YOLO 114 gray fill
+
   const isGrayscale = rawBuffer.length === origWidth * origHeight;
 
   if (isGrayscale) {
     // Fast path: Grayscale buffer (1 byte per pixel)
-    for (let y = 0; y < targetSize; y++) {
-      const srcY = Math.min(origHeight - 1, Math.floor(y * scaleY));
+    for (let y = 0; y < nh; y++) {
+      const srcY = Math.min(origHeight - 1, Math.floor(y / scale));
       const srcRowOffset = srcY * origWidth;
-      const destRowOffset = y * targetSize;
+      const destRowOffset = (y + padY) * targetSize + padX;
 
-      for (let x = 0; x < targetSize; x++) {
-        const srcX = Math.min(origWidth - 1, Math.floor(x * scaleX));
+      for (let x = 0; x < nw; x++) {
+        const srcX = Math.min(origWidth - 1, Math.floor(x / scale));
         const val = rawBuffer[srcRowOffset + srcX] / 255.0;
         const destIdx = destRowOffset + x;
 
@@ -111,13 +125,13 @@ function preprocessFrame(
     }
   } else {
     // Standard RGB24 buffer (3 bytes per pixel)
-    for (let y = 0; y < targetSize; y++) {
-      const srcY = Math.min(origHeight - 1, Math.floor(y * scaleY));
+    for (let y = 0; y < nh; y++) {
+      const srcY = Math.min(origHeight - 1, Math.floor(y / scale));
       const srcRowOffset = srcY * origWidth * 3;
-      const destRowOffset = y * targetSize;
+      const destRowOffset = (y + padY) * targetSize + padX;
 
-      for (let x = 0; x < targetSize; x++) {
-        const srcX = Math.min(origWidth - 1, Math.floor(x * scaleX));
+      for (let x = 0; x < nw; x++) {
+        const srcX = Math.min(origWidth - 1, Math.floor(x / scale));
         const srcIdx = srcRowOffset + srcX * 3;
         const destIdx = destRowOffset + x;
 
@@ -129,17 +143,19 @@ function preprocessFrame(
   }
 
   const tensor = new ort.Tensor('float32', floatData, [1, 3, targetSize, targetSize]);
-  return { tensor, scaleX, scaleY };
+  return { tensor, padX, padY, nw, nh };
 }
 
 /**
- * Parses YOLOv8 output tensor [1, 84, 8400] and applies Non-Maximum Suppression.
+ * Parses YOLOv8 output tensor [1, 84, 8400] and applies Non-Maximum Suppression with unpadded letterbox coords.
  */
 function parseYOLOOutput(
   outputTensor: any,
-  scaleX: number,
-  scaleY: number,
-  confThresh: number = 0.35,
+  padX: number,
+  padY: number,
+  nw: number,
+  nh: number,
+  confThresh: number = 0.25,
   iouThresh: number = 0.45,
   targetClasses?: string[]
 ): any[] {
@@ -209,11 +225,19 @@ function parseYOLOOutput(
         continue;
       }
 
-      // Calculate normalized bounding box coordinates (0.0 to 1.0 relative)
-      const normX = Math.max(0, Math.min(1, (cx - w / 2) / 640));
-      const normY = Math.max(0, Math.min(1, (cy - h / 2) / 640));
-      const normW = Math.max(0, Math.min(1 - normX, w / 640));
-      const normH = Math.max(0, Math.min(1 - normY, h / 640));
+      // Convert letterboxed box to unpadded original image normalized coordinates (0.0 to 1.0)
+      const rawX = (cx - w / 2 - padX) / nw;
+      const rawY = (cy - h / 2 - padY) / nh;
+      const rawW = w / nw;
+      const rawH = h / nh;
+
+      const normX = Math.max(0, Math.min(1, rawX));
+      const normY = Math.max(0, Math.min(1, rawY));
+      const normW = Math.max(0, Math.min(1 - normX, rawW));
+      const normH = Math.max(0, Math.min(1 - normY, rawH));
+
+      // Skip invalid or out-of-frame boxes
+      if (normW <= 0 || normH <= 0) continue;
 
       candidateBoxes.push({
         x: normX,
@@ -309,7 +333,7 @@ if (!isMainThread && parentPort) {
           return;
         }
 
-        const { tensor, scaleX, scaleY } = preprocessFrame(msg.frameBuffer, msg.width, msg.height, 640);
+        const { tensor, padX, padY, nw, nh } = preprocessFrame(msg.frameBuffer, msg.width, msg.height, 640);
         const feeds: Record<string, any> = {};
         feeds[session.inputNames[0]] = tensor;
 
@@ -318,23 +342,51 @@ if (!isMainThread && parentPort) {
 
         const boxes = parseYOLOOutput(
           outputTensor,
-          scaleX,
-          scaleY,
-          msg.confidenceThreshold ?? 0.20,
+          padX,
+          padY,
+          nw,
+          nh,
+          msg.confidenceThreshold ?? 0.25,
           msg.iouThreshold ?? 0.45,
           msg.targetClasses
         );
 
         const durationMs = Date.now() - start;
 
-        parentPort?.postMessage({
+        let jpegBuffer: Uint8Array | null = null;
+        if (boxes.length > 0 && msg.frameBuffer && msg.width && msg.height) {
+          try {
+            const rawRgb = msg.frameBuffer;
+            const w = msg.width;
+            const h = msg.height;
+            const rgba = Buffer.alloc(w * h * 4);
+            for (let i = 0, j = 0; i < rawRgb.length; i += 3, j += 4) {
+              rgba[j] = rawRgb[i];
+              rgba[j + 1] = rawRgb[i + 1];
+              rgba[j + 2] = rawRgb[i + 2];
+              rgba[j + 3] = 255;
+            }
+            jpegBuffer = jpeg.encode({ data: rgba, width: w, height: h }, 80).data;
+          } catch (e: any) {
+            console.warn('[ONNXWorker] JPEG snapshot encoding warning:', e.message);
+          }
+        }
+
+        const responseMsg = {
           type: 'INFER_RESULT',
           cameraId: msg.cameraId,
           timestamp: msg.timestamp,
           boxes,
           durationMs,
-          status: 'SUCCESS'
-        });
+          status: 'SUCCESS',
+          jpegBuffer
+        };
+
+        if (jpegBuffer && jpegBuffer.buffer) {
+          parentPort?.postMessage(responseMsg, [jpegBuffer.buffer as any]);
+        } else {
+          parentPort?.postMessage(responseMsg);
+        }
       }
     } catch (err: any) {
       parentPort?.postMessage({

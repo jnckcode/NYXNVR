@@ -1,6 +1,13 @@
 /**
  * @file AIAnalyticsEngine.ts
- * @description Dynamic Two-Stage AI Analytics Coordinator managing Stage 1 MotionFilter and Stage 2 ONNX Worker Thread with Hot-Reload.
+ * @description Dynamic Two-Stage AI Analytics Coordinator with per-camera inference locking.
+ * 
+ * Optimizations over v1.1:
+ * - Per-camera inference lock: Camera A doesn't block Camera B from being analyzed
+ * - Per-camera throttle: Each camera has independent 250ms throttle window
+ * - Higher default confidence threshold (0.35) for fewer false positives
+ * - MotionFilter uses internal 160×120 downscale for 12× faster motion detection
+ * 
  * @functions processStage1Frame, processStage2Inference, setCameraROI, toggleCameraAI, reloadModel
  * @dependencies worker_threads, events, fs, path, MotionFilter, SettingsService, EventRepository, CameraRepository, logger
  */
@@ -9,9 +16,9 @@ import EventEmitter from 'events';
 import { Worker } from 'worker_threads';
 import fs from 'fs';
 import path from 'path';
-import jpeg from 'jpeg-js';
 import { MotionFilter } from './MotionFilter';
 import { SettingsService } from '../core/SettingsService';
+import { LoadGovernor } from '../core/LoadGovernor';
 import { EventRepository } from '../db/eventRepository';
 import { CameraRepository } from '../db/cameraRepository';
 import { ROIConfig, Camera } from '../types/camera';
@@ -22,20 +29,27 @@ import { SYSTEM_CONSTANTS } from '../config/constants';
 
 const logger = createLogger('AIAnalyticsEngine');
 
+/** Minimum interval between inferences for the SAME camera (ms) */
+const PER_CAMERA_THROTTLE_MS = 250;
+
 export class AIAnalyticsEngine extends EventEmitter {
   private static instance: AIAnalyticsEngine;
   private settingsService: SettingsService;
+  private loadGovernor: LoadGovernor;
   private worker: Worker | null = null;
   private motionFilters: Map<string, MotionFilter> = new Map();
   private lastMotionTime: Map<string, number> = new Map();
   private isWorkerReady: boolean = false;
-  private isInferring: boolean = false;
-  private lastInferenceTime: number = 0;
-  private pendingInferences: Map<string, { frame: Buffer; width: number; height: number; timestamp: string }> = new Map();
+
+  /** Per-camera inference state — replaces global single-lock */
+  private inferringCameras: Set<string> = new Set();
+  private lastInferencePerCamera: Map<string, number> = new Map();
+  private inferenceStartTimes: Map<string, number> = new Map();
 
   private constructor() {
     super();
     this.settingsService = SettingsService.getInstance();
+    this.loadGovernor = LoadGovernor.getInstance();
     this.initializeWorker();
 
     // Listen to dynamic model path changes for seamless hot-reloading
@@ -114,12 +128,19 @@ export class AIAnalyticsEngine extends EventEmitter {
     boxes: BoundingBox[];
     durationMs: number;
     status: string;
+    jpegBuffer?: Uint8Array | null;
   }): void {
-    this.isInferring = false;
-    this.lastInferenceTime = Date.now();
+    // Release per-camera lock
+    this.inferringCameras.delete(res.cameraId);
+    this.inferenceStartTimes.delete(res.cameraId);
+    this.lastInferencePerCamera.set(res.cameraId, Date.now());
+
+    // Notify Load Governor of real-time inference duration
+    if (res.durationMs > 0) {
+      this.loadGovernor.recordInferenceDuration(res.durationMs);
+    }
 
     if (!res.boxes || res.boxes.length === 0) {
-      this.pendingInferences.delete(res.cameraId);
       return;
     }
 
@@ -130,34 +151,21 @@ export class AIAnalyticsEngine extends EventEmitter {
       res.boxes.map(b => `${b.label.toUpperCase()} (${Math.round(b.confidence * 100)}%)`).join(', ')
     );
 
-    const pending = this.pendingInferences.get(res.cameraId);
     let snapshotRelPath = '';
-
-    if (pending) {
+    if (res.jpegBuffer) {
       try {
         const snapDir = SYSTEM_CONSTANTS.DEFAULT_SNAPSHOT_PATH;
         ensureDirExists(snapDir);
         const fileName = `${res.cameraId}_${Date.now()}.jpg`;
         const fullSnapPath = path.join(snapDir, fileName);
 
-        // Convert raw RGB24 buffer to RGBA and encode as real JPEG image
-        const rawRgb = pending.frame;
-        const w = pending.width;
-        const h = pending.height;
-        const rgba = Buffer.alloc(w * h * 4);
-        for (let i = 0, j = 0; i < rawRgb.length; i += 3, j += 4) {
-          rgba[j] = rawRgb[i];
-          rgba[j + 1] = rawRgb[i + 1];
-          rgba[j + 2] = rawRgb[i + 2];
-          rgba[j + 3] = 255;
-        }
-        const jpegData = jpeg.encode({ data: rgba, width: w, height: h }, 80).data;
-        fs.writeFileSync(fullSnapPath, jpegData);
+        // Asynchronously write pre-encoded JPEG from worker without blocking main event loop
+        fs.promises.writeFile(fullSnapPath, Buffer.from(res.jpegBuffer)).catch(err => {
+          logger.error('Failed to write event snapshot image:', err.message);
+        });
         snapshotRelPath = fileName;
       } catch (err: any) {
-        logger.error('Failed to save event snapshot image:', err.message);
-      } finally {
-        this.pendingInferences.delete(res.cameraId);
+        logger.error('Failed to prepare snapshot path:', err.message);
       }
     }
 
@@ -228,7 +236,7 @@ export class AIAnalyticsEngine extends EventEmitter {
   }
 
   /**
-   * Evaluates Stage 1 micro-frame (160x120) and triggers Stage 2 burst ONNX if motion is detected.
+   * Evaluates Stage 1 micro-frame and triggers Stage 2 burst ONNX if motion is detected.
    */
   public handleStage1Frame(
     camera: Camera,
@@ -248,16 +256,18 @@ export class AIAnalyticsEngine extends EventEmitter {
   }
 
   /**
-   * Checks if camera is in active motion burst window.
+   * Checks if camera is in active motion burst window adapted to LoadGovernor cooldown.
    */
   public isCameraInBurstWindow(cameraId: string): boolean {
     const lastTime = this.lastMotionTime.get(cameraId);
     if (!lastTime) return false;
-    return (Date.now() - lastTime) <= SYSTEM_CONSTANTS.MOTION_COOLDOWN_MS;
+    const cooldownMs = this.loadGovernor.getBurstCooldownMs();
+    return (Date.now() - lastTime) <= cooldownMs;
   }
 
   /**
-   * Dispatches high-res frame to Stage 2 ONNX worker thread during motion burst.
+   * Dispatches high-res frame to Stage 2 ONNX worker thread via zero-copy ArrayBuffer transfer.
+   * Uses per-camera locking — Camera A inferring does NOT block Camera B.
    */
   public dispatchStage2Inference(
     cameraId: string,
@@ -265,27 +275,43 @@ export class AIAnalyticsEngine extends EventEmitter {
     width: number,
     height: number
   ): void {
-    // Drop frame if inference is currently in progress, or within throttle window (max 3-4 FPS burst)
     const now = Date.now();
-    if (!this.isWorkerReady || !this.worker || this.isInferring || (now - this.lastInferenceTime < 250)) {
-      return; // Non-blocking drop frame
+
+    // Per-camera gate: skip if this specific camera is already inferring
+    if (this.inferringCameras.has(cameraId)) {
+      const startTime = this.inferenceStartTimes.get(cameraId) || 0;
+      if (now - startTime > 5000) {
+        // Inference took longer than 5s (hung worker or dropped message) - force release lock
+        logger.warn(`Inference lock timeout (>5s) on cam [${cameraId}] - force unlocking`);
+        this.inferringCameras.delete(cameraId);
+        this.inferenceStartTimes.delete(cameraId);
+      } else {
+        return; // Non-blocking drop — this camera's previous inference hasn't finished
+      }
     }
 
-    this.isInferring = true;
-    this.lastInferenceTime = now;
-    const timestamp = new Date().toISOString();
-    this.pendingInferences.set(cameraId, {
-      frame: frameBuffer,
-      width,
-      height,
-      timestamp
-    });
+    // Per-camera throttle: minimum 250ms between inferences for same camera
+    const lastTime = this.lastInferencePerCamera.get(cameraId) || 0;
+    if (now - lastTime < PER_CAMERA_THROTTLE_MS) {
+      return; // Too soon for this camera
+    }
 
+    // Global gate: worker must be ready
+    if (!this.isWorkerReady || !this.worker) {
+      return;
+    }
+
+    // Lock this camera
+    this.inferringCameras.add(cameraId);
+    this.inferenceStartTimes.set(cameraId, now);
+    this.lastInferencePerCamera.set(cameraId, now);
+
+    const timestamp = new Date().toISOString();
     const confidenceThreshold = this.settingsService.getAiConfidenceThreshold();
     const iouThreshold = this.settingsService.getAiIouThreshold();
     const targetClasses = this.settingsService.getAiTargetClasses();
 
-    this.worker.postMessage({
+    const msg = {
       type: 'INFER',
       cameraId,
       timestamp,
@@ -295,6 +321,13 @@ export class AIAnalyticsEngine extends EventEmitter {
       confidenceThreshold,
       iouThreshold,
       targetClasses
-    });
+    };
+
+    // Zero-copy transfer of the raw frame ArrayBuffer to the worker thread
+    if (frameBuffer && frameBuffer.buffer) {
+      this.worker.postMessage(msg, [frameBuffer.buffer as any]);
+    } else {
+      this.worker.postMessage(msg);
+    }
   }
 }

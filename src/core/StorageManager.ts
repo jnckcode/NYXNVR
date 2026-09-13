@@ -50,7 +50,7 @@ export class StorageManager {
       const sanitized = sanitizePath(filePath);
       if (fs.existsSync(sanitized)) {
         const stats = fs.statSync(sanitized);
-        if (stats.size > 1024) { // Only record non-empty files (>1KB)
+        if (stats.size > 10240) { // Only record valid files (>10KB) — filter corrupt/empty segments
           RecordingRepository.create({
             cameraId,
             filePath: sanitized,

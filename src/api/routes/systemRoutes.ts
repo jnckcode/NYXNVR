@@ -12,12 +12,14 @@ import { pipeline } from 'stream/promises';
 import { getSystemMetrics } from '../../utils/metrics';
 import { SettingsService } from '../../core/SettingsService';
 import { StreamManager } from '../../core/StreamManager';
+import { LoadGovernor } from '../../core/LoadGovernor';
 import { SYSTEM_CONSTANTS } from '../../config/constants';
 import { ensureDirExists, sanitizePath } from '../../utils/pathSanitizer';
 
 export async function registerSystemRoutes(server: FastifyInstance): Promise<void> {
   const settingsService = SettingsService.getInstance();
   const streamManager = StreamManager.getInstance();
+  const loadGovernor = LoadGovernor.getInstance();
 
   // Hardware metrics for ARM64 STB monitoring
   server.get('/api/v1/system/metrics', async (_req: FastifyRequest, reply: FastifyReply) => {
@@ -35,6 +37,48 @@ export async function registerSystemRoutes(server: FastifyInstance): Promise<voi
     return reply.send({
       success: true,
       disk: diskInfo
+    });
+  });
+
+  // Load Governor live telemetry
+  server.get('/api/v1/system/governor', async (_req: FastifyRequest, reply: FastifyReply) => {
+    return reply.send({
+      success: true,
+      governor: loadGovernor.getMetrics()
+    });
+  });
+
+  // List all available ONNX models
+  server.get('/api/v1/models', async (_req: FastifyRequest, reply: FastifyReply) => {
+    const models = settingsService.getAvailableModels();
+    const activeModelPath = settingsService.getModelPath();
+    return reply.send({
+      success: true,
+      models,
+      activeModelPath
+    });
+  });
+
+  // Select and hot-reload an ONNX model from the models directory
+  server.post('/api/v1/models/select', async (req: FastifyRequest<{ Body: { modelPath: string } }>, reply: FastifyReply) => {
+    const { modelPath } = req.body || {};
+    if (!modelPath) {
+      return reply.code(400).send({ success: false, error: 'modelPath is required' });
+    }
+
+    const sanitized = sanitizePath(modelPath);
+    if (!fs.existsSync(sanitized)) {
+      return reply.code(404).send({ success: false, error: `Model file not found at: ${sanitized}` });
+    }
+
+    settingsService.updateSettings({
+      ai_model_path: sanitized
+    });
+
+    return reply.send({
+      success: true,
+      message: 'Active ONNX model updated and hot-reloaded successfully',
+      activeModelPath: sanitized
     });
   });
 

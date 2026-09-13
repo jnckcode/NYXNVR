@@ -64,10 +64,91 @@ export class SettingsService extends EventEmitter {
   }
 
   /**
-   * Retrieves the active ONNX model path.
+   * Retrieves the active ONNX model path with robust auto-discovery fallback.
    */
   public getModelPath(): string {
-    return sanitizePath(this.cachedSettings.ai_model_path || SYSTEM_CONSTANTS.DEFAULT_MODEL_PATH);
+    const configured = sanitizePath(this.cachedSettings.ai_model_path || SYSTEM_CONSTANTS.DEFAULT_MODEL_PATH);
+    if (fs.existsSync(configured)) {
+      return configured;
+    }
+
+    // Fallback 1: check default yolov8n.onnx
+    if (fs.existsSync(SYSTEM_CONSTANTS.DEFAULT_MODEL_PATH)) {
+      return SYSTEM_CONSTANTS.DEFAULT_MODEL_PATH;
+    }
+
+    // Fallback 2: auto-discover any *.onnx in models directory
+    try {
+      const modelsDir = SYSTEM_CONSTANTS.DEFAULT_MODELS_DIR;
+      if (fs.existsSync(modelsDir)) {
+        const files = fs.readdirSync(modelsDir).filter(f => f.endsWith('.onnx'));
+        if (files.length > 0) {
+          const autoPath = path.join(modelsDir, files[0]);
+          logger.warn(`Configured model [${configured}] not found, auto-resolved to: [${autoPath}]`);
+          return autoPath;
+        }
+      }
+    } catch (e) {
+      // Ignore
+    }
+
+    return configured;
+  }
+
+  /**
+   * Discovers and lists all available .onnx models in the models directory with metadata.
+   */
+  public getAvailableModels(): Array<{
+    fileName: string;
+    filePath: string;
+    sizeBytes: number;
+    sizeMb: number;
+    precision: 'FP32' | 'INT8' | 'CUSTOM';
+    displayName: string;
+    isActive: boolean;
+  }> {
+    const modelsDir = SYSTEM_CONSTANTS.DEFAULT_MODELS_DIR;
+    ensureDirExists(modelsDir);
+    const activePath = this.getModelPath();
+
+    try {
+      const files = fs.readdirSync(modelsDir).filter(f => f.endsWith('.onnx'));
+      return files.map(file => {
+        const fullPath = path.join(modelsDir, file);
+        let sizeBytes = 0;
+        try {
+          sizeBytes = fs.statSync(fullPath).size;
+        } catch (e) {}
+
+        const sizeMb = Math.round((sizeBytes / (1024 * 1024)) * 10) / 10;
+        const lower = file.toLowerCase();
+        let precision: 'FP32' | 'INT8' | 'CUSTOM' = 'CUSTOM';
+        let displayName = file;
+
+        if (lower.includes('int8') || sizeMb < 6.0) {
+          precision = 'INT8';
+          displayName = `YOLOv8n INT8 (Low-Power / ${sizeMb} MB)`;
+        } else if (lower.includes('yolov8n') || sizeMb < 15.0) {
+          precision = 'FP32';
+          displayName = `YOLOv8n FP32 (Full-Precision / ${sizeMb} MB)`;
+        }
+
+        const isExactMatch = path.resolve(fullPath).toLowerCase() === path.resolve(activePath).toLowerCase();
+
+        return {
+          fileName: file,
+          filePath: fullPath,
+          sizeBytes,
+          sizeMb,
+          precision,
+          displayName,
+          isActive: isExactMatch
+        };
+      });
+    } catch (err: any) {
+      logger.error('Failed to scan models directory:', err.message);
+      return [];
+    }
   }
 
   /**
@@ -120,7 +201,7 @@ export class SettingsService extends EventEmitter {
    */
   public getAiConfidenceThreshold(): number {
     const val = Number(this.cachedSettings.ai_confidence_threshold);
-    return isNaN(val) ? 0.20 : val;
+    return isNaN(val) ? 0.25 : val;
   }
 
   /**

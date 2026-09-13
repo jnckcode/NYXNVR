@@ -1,6 +1,16 @@
 /**
  * @file StreamManager.ts
- * @description Single Ingestion - Multi Consumer RTSP Engine managing single-connection FFmpeg processes, fMP4 WebSocket live streaming, MP4 file segmentation, and Stage 1 motion frame extraction.
+ * @description Single Ingestion - Multi Consumer RTSP Engine with stream health watchdog.
+ * Manages single-connection FFmpeg processes, fMP4 WebSocket live streaming,
+ * MP4 file segmentation, and Stage 1 motion frame extraction.
+ * 
+ * Anti-Freeze Architecture:
+ * - Stream Health Watchdog: Periodic check kills frozen FFmpeg processes
+ * - Low-latency FFmpeg flags: nobuffer + low_delay + short probe
+ * - Fast reconnect: 2s → 5s → 10s max (capped for surveillance)
+ * - Init segment reset on reconnect for clean MSE recovery
+ * - Motion buffer cap to prevent unbounded memory growth
+ * 
  * @functions startCameraStream, stopCameraStream, restartCameraStream, registerLiveClient, unregisterLiveClient, getStreamState
  * @dependencies child_process, fs, path, events, StorageManager, SettingsService, AIAnalyticsEngine, CameraRepository, logger
  */
@@ -13,6 +23,7 @@ import { WebSocket } from 'ws';
 import { Camera, CameraStreamState, StreamStatusType } from '../types/camera';
 import { StorageManager } from './StorageManager';
 import { SettingsService } from './SettingsService';
+import { LoadGovernor } from './LoadGovernor';
 import { AIAnalyticsEngine } from '../ai/AIAnalyticsEngine';
 import { CameraRepository } from '../db/cameraRepository';
 import { createLogger } from '../utils/logger';
@@ -20,6 +31,13 @@ import { SYSTEM_CONSTANTS } from '../config/constants';
 import { ensureDirExists } from '../utils/pathSanitizer';
 
 const logger = createLogger('StreamManager');
+
+/** How often the watchdog checks stream health (ms) */
+const WATCHDOG_INTERVAL_MS = 5000;
+/** If no data received for this long, stream is considered frozen (ms) */
+const STREAM_STALE_THRESHOLD_MS = 12000;
+/** Maximum motion buffer size before forced trim (bytes) - prevents memory leak */
+const MAX_MOTION_BUFFER_BYTES = 2 * 1024 * 1024; // 2MB cap
 
 interface ActiveStream {
   camera: Camera;
@@ -43,12 +61,15 @@ export class StreamManager extends EventEmitter {
   private activeStreams: Map<string, ActiveStream> = new Map();
   private storageManager: StorageManager;
   private settingsService: SettingsService;
+  private loadGovernor: LoadGovernor;
   private aiEngine: AIAnalyticsEngine;
+  private watchdogTimer: NodeJS.Timeout | null = null;
 
   private constructor() {
     super();
     this.storageManager = StorageManager.getInstance();
     this.settingsService = SettingsService.getInstance();
+    this.loadGovernor = LoadGovernor.getInstance();
     this.aiEngine = AIAnalyticsEngine.getInstance();
   }
 
@@ -57,6 +78,68 @@ export class StreamManager extends EventEmitter {
       StreamManager.instance = new StreamManager();
     }
     return StreamManager.instance;
+  }
+
+  /**
+   * Starts the stream health watchdog timer.
+   * Periodically checks all active streams and force-kills frozen FFmpeg processes.
+   */
+  private startWatchdog(): void {
+    if (this.watchdogTimer) return;
+    this.watchdogTimer = setInterval(() => {
+      this.checkStreamHealth();
+    }, WATCHDOG_INTERVAL_MS);
+    logger.info(`Stream health watchdog started (interval: ${WATCHDOG_INTERVAL_MS}ms, stale threshold: ${STREAM_STALE_THRESHOLD_MS}ms)`);
+  }
+
+  /**
+   * Stops the watchdog timer (called when no streams are active).
+   */
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+      logger.debug('Stream health watchdog stopped.');
+    }
+  }
+
+  /**
+   * Watchdog health check - iterates all streams, detects frozen ones, and force-restarts.
+   */
+  private checkStreamHealth(): void {
+    const now = Date.now();
+    for (const [cameraId, stream] of this.activeStreams) {
+      // Only check streams that claim to be streaming or connecting
+      if (stream.status !== 'streaming' && stream.status !== 'connecting') continue;
+
+      const timeSinceLastFrame = now - stream.lastFrameTime;
+
+      // For 'connecting' status, allow longer grace period (20s for initial handshake)
+      const threshold = stream.status === 'connecting' ? 20000 : STREAM_STALE_THRESHOLD_MS;
+
+      if (timeSinceLastFrame > threshold) {
+        logger.warn(
+          `[Watchdog] Camera [${stream.camera.name}] FROZEN - no data for ${(timeSinceLastFrame / 1000).toFixed(1)}s. Force-killing FFmpeg...`
+        );
+
+        // Force-kill the frozen FFmpeg process - handleStreamTermination will auto-reconnect
+        if (stream.process) {
+          try {
+            stream.process.kill('SIGKILL');
+          } catch (e) {
+            // Process may already be dead
+          }
+          stream.process = null;
+        }
+
+        // Reset init segment so reconnect produces fresh MSE headers
+        stream.initSegment = null;
+        stream.headerBuffer = Buffer.alloc(0);
+        stream.motionBuffer = Buffer.alloc(0);
+
+        this.handleStreamTermination(stream);
+      }
+    }
   }
 
   /**
@@ -103,20 +186,20 @@ export class StreamManager extends EventEmitter {
 
     this.activeStreams.set(camera.id, activeStream);
     this.spawnFfmpegProcess(activeStream);
+
+    // Start watchdog if not already running
+    this.startWatchdog();
   }
 
   /**
    * Spawns the FFmpeg multiplexing process for a camera.
+   * Uses optimized low-latency flags to prevent stream freeze.
    */
   private spawnFfmpegProcess(stream: ActiveStream): void {
     const { camera } = stream;
     const recDir = this.storageManager.getCameraRecordingDir(camera.id);
     const segmentPattern = path.join(recDir, '%Y-%m-%d_%H-%M-%S.mp4').replace(/\\/g, '/');
 
-    // Build FFmpeg arguments for Single Ingestion - Multi Consumer:
-    // Output 1: MP4 Segments directly to storage (passthrough -c:v copy)
-    // Output 2: fMP4 over stdout (pipe:1) for live WebSocket MSE streaming
-    // Output 3: Micro-scale 160x120 grayscale frames over fd 3 (pipe:3) for Stage 1 MotionFilter (ONLY IF AI ENABLED)
     const isRtsp = camera.rtsp_url.startsWith('rtsp://') || camera.rtsp_url.startsWith('rtsps://');
     
     const inputArgs: string[] = [];
@@ -124,15 +207,16 @@ export class StreamManager extends EventEmitter {
       inputArgs.push(
         '-rtsp_transport', 'tcp',
         '-rtsp_flags', 'prefer_tcp',
-        '-timeout', '15000000',        // 15s TCP socket timeout for slow camera handshakes
-        '-fflags', '+genpts+discardcorrupt',
+        '-timeout', '10000000',          // 10s TCP timeout (faster failure detection)
+        '-fflags', '+genpts+discardcorrupt+nobuffer', // nobuffer for low-latency
+        '-flags', 'low_delay',           // Minimize decode latency
         '-use_wallclock_as_timestamps', '1',
-        '-analyzeduration', '5000000', // 5s analyze duration to reliably capture SPS/PPS keyframes
-        '-probesize', '5000000',       // 5MB probe buffer
-        '-max_delay', '500000'         // 500ms demuxer jitter headroom
+        '-analyzeduration', '2000000',   // 2s analyze (was 5s - faster stream start)
+        '-probesize', '2000000',         // 2MB probe (was 5MB - faster initial connect)
+        '-max_delay', '500000',          // 500ms demuxer jitter headroom
+        '-reorder_queue_size', '16'      // Small reorder queue to reduce latency
       );
     } else {
-      // Test video loop or HTTP stream
       inputArgs.push('-re');
     }
     inputArgs.push('-i', camera.rtsp_url);
@@ -141,7 +225,7 @@ export class StreamManager extends EventEmitter {
 
     const ffmpegArgs = [
       ...inputArgs,
-      // Output 1: Segmented MP4 files (Storage Engine)
+      // Output 1: Segmented MP4 files (Storage Engine) - passthrough copy
       '-map', '0:v:0',
       '-c:v', 'copy',
       '-an',
@@ -152,18 +236,18 @@ export class StreamManager extends EventEmitter {
       '-strftime', '1',
       segmentPattern,
 
-      // Output 2: Fragmented MP4 stream to stdout (pipe:1) for WebSocket MSE (Low-Latency zero-stutter)
+      // Output 2: Fragmented MP4 to stdout (pipe:1) for live WebSocket MSE
       '-map', '0:v:0',
       '-c:v', 'copy',
       '-an',
       '-f', 'mp4',
       '-movflags', 'frag_keyframe+empty_moov+default_base_moof+omit_tfhd_offset',
+      '-frag_duration', '250000',        // Fragment every 250ms for ultra-smooth live delivery
       '-flush_packets', '1',
       'pipe:1'
     ];
 
-    // Output 3 is ONLY attached if camera.ai_enabled is 1.
-    // When AI is OFF, FFmpeg runs in pure 100% remux passthrough (copy), saving 20-30% CPU per camera!
+    // Output 3: Stage 1 Motion Frames (only if AI enabled)
     const isAiEnabled = camera.ai_enabled === 1;
     if (isAiEnabled) {
       ffmpegArgs.push(
@@ -177,10 +261,9 @@ export class StreamManager extends EventEmitter {
       );
     }
 
-    logger.info(`Spawning FFmpeg for camera [${camera.name}] (${camera.id}) - AI Mode: ${isAiEnabled ? 'ON (Stage 1 Pipe Active)' : 'OFF (Zero-Decode Passthrough)'}...`);
+    logger.info(`Spawning FFmpeg for camera [${camera.name}] (${camera.id}) - AI: ${isAiEnabled ? 'ON' : 'OFF (Zero-Decode Passthrough)'}`);
 
     try {
-      // stdio: [0: stdin, 1: stdout fmp4, 2: stderr log, 3: pipe motion frames (if AI enabled)]
       const stdioOptions: any = isAiEnabled
         ? ['ignore', 'pipe', 'pipe', 'pipe']
         : ['ignore', 'pipe', 'pipe', 'ignore'];
@@ -191,6 +274,7 @@ export class StreamManager extends EventEmitter {
 
       stream.process = proc;
       stream.status = 'connecting';
+      stream.lastFrameTime = Date.now(); // Reset watchdog timer on spawn
       stream.currentSegmentStartTime = Date.now();
 
       // Handle Output 2: fMP4 Live Stream (stdout)
@@ -202,6 +286,7 @@ export class StreamManager extends EventEmitter {
           if (stream.status !== 'streaming') {
             stream.status = 'streaming';
             stream.reconnectAttempts = 0;
+            logger.info(`Camera [${camera.name}] stream is LIVE.`);
             this.emit('streamStatusChanged', { cameraId: camera.id, status: 'streaming' });
           }
 
@@ -215,11 +300,12 @@ export class StreamManager extends EventEmitter {
               if (stream.headerBuffer.length >= totalInitLen) {
                 stream.initSegment = Buffer.from(stream.headerBuffer.subarray(0, totalInitLen));
                 const remaining = stream.headerBuffer.subarray(totalInitLen);
-                stream.headerBuffer = Buffer.alloc(0);
+                stream.headerBuffer = Buffer.alloc(0); // Free header accumulator
                 if (remaining.length > 0) {
                   stream.lastFragment = remaining;
                   this.broadcastToClients(stream, remaining);
                 }
+                logger.debug(`Camera [${camera.name}] init segment captured (${stream.initSegment.length} bytes).`);
               }
             }
             return;
@@ -230,29 +316,33 @@ export class StreamManager extends EventEmitter {
         });
       }
 
-      // Handle Output 3: Stage 1 Motion Frame Buffer (pipe:3) - only active if AI is enabled
+      // Handle Output 3: Stage 1 Motion Frame Buffer (pipe:3)
       const motionStream = isAiEnabled && proc.stdio ? (proc.stdio[3] as any) : null;
       if (motionStream) {
-        const frameSize = SYSTEM_CONSTANTS.STAGE1_FRAME_WIDTH * SYSTEM_CONSTANTS.STAGE1_FRAME_HEIGHT * 3; // 320 * 240 * 3 = 230,400 bytes
+        const frameSize = SYSTEM_CONSTANTS.STAGE1_FRAME_WIDTH * SYSTEM_CONSTANTS.STAGE1_FRAME_HEIGHT * 3;
 
         motionStream.on('data', (chunk: Buffer) => {
+          // Guard: cap motion buffer to prevent unbounded memory growth and preserve frame alignment
+          if (stream.motionBuffer.length + chunk.length > MAX_MOTION_BUFFER_BYTES) {
+            // Buffer overflow - discard and reset to empty to realign with fresh frame boundary
+            stream.motionBuffer = Buffer.alloc(0);
+          }
+
           stream.motionBuffer = Buffer.concat([stream.motionBuffer, chunk]);
 
           while (stream.motionBuffer.length >= frameSize) {
-            const frame = stream.motionBuffer.subarray(0, frameSize);
+            const frame = Buffer.from(stream.motionBuffer.subarray(0, frameSize)); // Copy to avoid subarray retention
             stream.motionBuffer = stream.motionBuffer.subarray(frameSize);
 
-            // Pass to Stage 1 Motion Filter (use dynamic stream.camera config and isRgb=true)
             const motionRes = this.aiEngine.handleStage1Frame(stream.camera, frame, true);
 
             const now = Date.now();
             const lastScan = stream.lastPeriodicAiScan || 0;
-            // Scan keyframe every 1.5s even without motion, so stationary objects (people standing/sitting) remain detected
-            const isPeriodicDue = (now - lastScan >= SYSTEM_CONSTANTS.HEARTBEAT_AI_SCAN_INTERVAL_MS);
+            const heartbeatIntervalMs = this.loadGovernor.getHeartbeatIntervalMs();
+            const isPeriodicDue = (now - lastScan >= heartbeatIntervalMs);
             const inBurst = this.aiEngine.isCameraInBurstWindow(stream.camera.id);
             const isContinuous = this.settingsService.isContinuousAiEnabled();
 
-            // Trigger Stage 2 ONNX if: motion detected, active burst window, continuous AI mode, or periodic heartbeat due
             if (stream.camera.ai_enabled === 1 && (motionRes.hasMotion || inBurst || isContinuous || isPeriodicDue)) {
               if (motionRes.hasMotion || isPeriodicDue) {
                 stream.lastPeriodicAiScan = now;
@@ -268,11 +358,12 @@ export class StreamManager extends EventEmitter {
         });
       }
 
+      // Handle stderr: segment indexing + error logging
       if (proc.stderr) {
         let lastSegmentFile: string | null = null;
         proc.stderr.on('data', (data: Buffer) => {
           const logMsg = data.toString();
-          // Extract newly opened segment path and index previous segment without disk storms
+
           const match = logMsg.match(/Opening '([^']+)' for writing/);
           if (match && match[1]) {
             const newlyOpened = match[1];
@@ -309,24 +400,8 @@ export class StreamManager extends EventEmitter {
   }
 
   /**
-   * Extracts fMP4 initialization segment (ftyp + moov) from the beginning of the stream.
-   */
-  private extractInitSegment(chunk: Buffer): Buffer | null {
-    // Look for 'moov' atom
-    const moovIdx = chunk.indexOf('moov');
-    if (moovIdx > 0) {
-      // Find end of moov atom
-      const moovSize = chunk.readUInt32BE(moovIdx - 4);
-      const initLen = moovIdx - 4 + moovSize;
-      if (chunk.length >= initLen) {
-        return Buffer.from(chunk.subarray(0, initLen));
-      }
-    }
-    return Buffer.from(chunk.subarray(0, Math.min(chunk.length, 4096)));
-  }
-
-  /**
-   * Handles unexpected stream termination with exponential backoff auto-recovery.
+   * Handles unexpected stream termination with fast auto-recovery.
+   * Reconnect backoff: 2s → 4s → 7s → 10s max (capped for surveillance use-case).
    */
   private handleStreamTermination(stream: ActiveStream): void {
     if (stream.process) {
@@ -346,24 +421,30 @@ export class StreamManager extends EventEmitter {
     stream.status = 'reconnecting';
     stream.reconnectAttempts++;
 
-    // Exponential backoff: 3s -> 6s -> 11s -> 20s -> 35s -> max 60s
+    // Reset MSE state for clean reconnect - clients will get fresh init segment
+    stream.initSegment = null;
+    stream.headerBuffer = Buffer.alloc(0);
+    stream.motionBuffer = Buffer.alloc(0);
+
+    // Fast surveillance-grade backoff: 2s → 4s → 7s → 10s max
     const delay = Math.min(
-      60000,
-      Math.max(3000, Math.round(3000 * Math.pow(1.8, Math.min(stream.reconnectAttempts - 1, 6))))
+      10000,
+      Math.max(2000, Math.round(2000 * Math.pow(1.5, Math.min(stream.reconnectAttempts - 1, 4))))
     );
 
-    logger.warn(`Camera [${stream.camera.name}] stream offline/dropped. Backoff reconnect in ${(delay / 1000).toFixed(1)}s (Attempt #${stream.reconnectAttempts})...`);
+    logger.warn(`Camera [${stream.camera.name}] reconnecting in ${(delay / 1000).toFixed(1)}s (attempt #${stream.reconnectAttempts})...`);
     this.emit('streamStatusChanged', { cameraId: stream.camera.id, status: 'reconnecting', attempts: stream.reconnectAttempts });
 
     if (stream.reconnectTimer) clearTimeout(stream.reconnectTimer);
     stream.reconnectTimer = setTimeout(() => {
-      // Re-fetch camera details to ensure URL is fresh
       const updatedCam = CameraRepository.getById(stream.camera.id);
       if (updatedCam && updatedCam.enabled === 1) {
         stream.camera = updatedCam;
         this.spawnFfmpegProcess(stream);
       } else {
         this.activeStreams.delete(stream.camera.id);
+        // Stop watchdog if no more streams
+        if (this.activeStreams.size === 0) this.stopWatchdog();
       }
     }, delay);
   }
@@ -404,6 +485,9 @@ export class StreamManager extends EventEmitter {
 
     this.activeStreams.delete(cameraId);
     this.emit('streamStatusChanged', { cameraId, status: 'stopped' });
+
+    // Stop watchdog if no more active streams
+    if (this.activeStreams.size === 0) this.stopWatchdog();
   }
 
   /**
@@ -416,7 +500,6 @@ export class StreamManager extends EventEmitter {
       stream.camera = camera;
       logger.info(`Updated in-memory config for camera [${camera.name}] (AI: ${camera.ai_enabled ? 'ON' : 'OFF'}).`);
 
-      // If AI state toggled, restart stream so FFmpeg attaches or detaches the Stage 1 decode pipe
       if (prevAiEnabled !== camera.ai_enabled && stream.status === 'streaming') {
         logger.info(`Restarting FFmpeg for camera [${camera.name}] to update AI pipeline...`);
         this.restartCameraStream(camera);
@@ -438,10 +521,16 @@ export class StreamManager extends EventEmitter {
 
   /**
    * Broadcasts binary fMP4 chunk to all active WebSocket clients connected to this camera.
+   * Skips clients whose WebSocket send buffer is backed up (prevents backpressure freeze).
    */
   private broadcastToClients(stream: ActiveStream, chunk: Buffer): void {
     for (const client of stream.clients) {
       if (client.readyState === WebSocket.OPEN) {
+        // Skip clients with excessive send buffer backpressure (> 2MB queued)
+        // This prevents one slow client from freezing the entire broadcast loop
+        if ((client as any).bufferedAmount > 2 * 1024 * 1024) {
+          continue;
+        }
         try {
           client.send(chunk);
         } catch (err) {
@@ -457,7 +546,6 @@ export class StreamManager extends EventEmitter {
   public registerLiveClient(cameraId: string, ws: WebSocket): void {
     let stream = this.activeStreams.get(cameraId);
 
-    // If stream is not running yet, attempt to start it
     if (!stream) {
       const camera = CameraRepository.getById(cameraId);
       if (camera && camera.enabled === 1) {
@@ -475,7 +563,7 @@ export class StreamManager extends EventEmitter {
     stream.clients.add(ws);
     logger.info(`Live WebSocket client connected to camera [${cameraId}]. Total clients: ${stream.clients.size}`);
 
-    // If we have an initialization segment, send it immediately for instant MSE playback
+    // Send init segment immediately for instant MSE playback
     if (stream.initSegment && ws.readyState === WebSocket.OPEN) {
       try {
         ws.send(stream.initSegment);

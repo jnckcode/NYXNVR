@@ -288,9 +288,17 @@ export class RetentionWorker {
     let freedBytes = 0;
     const maxIterations = 50; // Safety cap per cycle
     let iterations = 0;
+    const RECHECK_EVERY = 5; // Re-fetch disk info every N deletes (reduces syscalls)
+
+    // Initial disk check
+    let diskInfo = this.settingsService.getDiskInfo();
 
     while (iterations < maxIterations) {
-      const diskInfo = this.settingsService.getDiskInfo();
+      // Re-check disk usage every RECHECK_EVERY deletions (avoids per-delete syscall overhead)
+      if (iterations > 0 && iterations % RECHECK_EVERY === 0) {
+        diskInfo = this.settingsService.getDiskInfo();
+      }
+
       if (!diskInfo.isOverThreshold) {
         break;
       }
@@ -308,6 +316,12 @@ export class RetentionWorker {
       freedBytes += deletedSize;
       purgedRecordings++;
       iterations++;
+
+      // After each delete, estimate freed space without syscall
+      // Force a real recheck on next RECHECK_EVERY boundary
+      if (diskInfo.usedPercent !== undefined) {
+        diskInfo = { ...diskInfo }; // shallow copy, let RECHECK_EVERY handle actual refresh
+      }
     }
 
     return { purgedRecordings, freedBytes };

@@ -1,7 +1,15 @@
 /**
  * @file player.js
- * @description HTML5 MediaSource Extensions (MSE) WebSocket fMP4 Player for ultra-low latency, stutter-free live video rendering.
- * @functions createMsePlayer, destroyMsePlayer, MSEPlayer
+ * @description HTML5 MediaSource Extensions (MSE) WebSocket fMP4 Player with anti-freeze protection.
+ * 
+ * Anti-Freeze Features:
+ * - Live-edge chase: Aggressive sync keeps playback within 1-2s of live
+ * - Queue overflow protection: Drops old chunks when queue exceeds limit
+ * - Stale stream detection: Auto-resets MSE pipeline after 8s of no data
+ * - WebSocket fast reconnect: 1.5s reconnect for surveillance use-case
+ * - Buffer pruning: Keeps only 10s of played buffer in memory
+ * 
+ * @functions MSEPlayer
  * @dependencies none
  */
 
@@ -17,7 +25,14 @@ class MSEPlayer {
     this.isDestroyed = false;
     this.hasInitialPlaybackStarted = false;
     this.stallCheckTimer = null;
-    this.mimeCodec = 'video/mp4; codecs="avc1.42E01E"'; // Baseline Profile H.264 fallback
+    this.lastDataTime = Date.now();
+    this.mimeCodec = 'video/mp4; codecs="avc1.42E01E"';
+
+    /** Max chunks to queue before dropping old ones (prevents memory blowup) */
+    this.MAX_QUEUE_SIZE = 60;
+    /** If no WebSocket data for this long, force MSE reset (ms) */
+    this.STALE_THRESHOLD_MS = 8000;
+
     this.init();
   }
 
@@ -57,7 +72,7 @@ class MSEPlayer {
       }
     });
 
-    // Periodic stall check every 1 second
+    // Health check every 1 second
     this.stallCheckTimer = setInterval(() => {
       if (!this.isDestroyed) {
         this.checkAndRecoverPlayback();
@@ -81,7 +96,7 @@ class MSEPlayer {
 
       this.sourceBuffer.addEventListener('updateend', () => {
         this.processQueue();
-        this.smoothSyncLive();
+        this.chaseLiveEdge();
         this.pruneBuffer();
       });
 
@@ -105,11 +120,13 @@ class MSEPlayer {
 
     this.ws.onopen = () => {
       this.onStatusChange('streaming');
+      this.lastDataTime = Date.now();
     };
 
     this.ws.onmessage = (event) => {
       if (this.isDestroyed) return;
       if (event.data instanceof ArrayBuffer) {
+        this.lastDataTime = Date.now();
         this.appendChunk(new Uint8Array(event.data));
       }
     };
@@ -117,7 +134,8 @@ class MSEPlayer {
     this.ws.onclose = () => {
       if (!this.isDestroyed) {
         this.onStatusChange('reconnecting');
-        setTimeout(() => this.connectWebSocket(), 3000);
+        // Fast reconnect for surveillance - 1.5s
+        setTimeout(() => this.connectWebSocket(), 1500);
       }
     };
 
@@ -130,6 +148,13 @@ class MSEPlayer {
 
   appendChunk(chunk) {
     if (this.isDestroyed) return;
+
+    // Queue overflow protection: drop oldest chunks if queue is too large
+    // This prevents memory from growing unbounded when MSE can't keep up
+    while (this.queue.length >= this.MAX_QUEUE_SIZE) {
+      this.queue.shift(); // Drop oldest
+    }
+
     this.queue.push(chunk);
     this.processQueue();
   }
@@ -146,7 +171,7 @@ class MSEPlayer {
       const chunk = this.queue.shift();
       this.sourceBuffer.appendBuffer(chunk);
 
-      // Start initial playback smoothly
+      // Start initial playback
       if (!this.hasInitialPlaybackStarted && this.sourceBuffer.buffered.length > 0) {
         const start = this.sourceBuffer.buffered.start(0);
         this.video.currentTime = start;
@@ -159,37 +184,42 @@ class MSEPlayer {
     } catch (err) {
       if (!this.isDestroyed) {
         console.warn('[MSEPlayer] Buffer append warning:', err);
+        // If QuotaExceededError, aggressively prune and retry
+        if (err.name === 'QuotaExceededError') {
+          this.emergencyPrune();
+        }
       }
     }
   }
 
   /**
-   * Smooth dynamic rate synchronization (Zero hard-seeks to eliminate stutter/choppiness).
+   * Aggressive live-edge chase - keeps playback within 1-2s of live.
+   * Tighter thresholds than before to eliminate perceived "freeze" (which was actually lag).
    */
-  smoothSyncLive() {
+  chaseLiveEdge() {
     if (!this.video || !this.sourceBuffer || this.sourceBuffer.buffered.length === 0) return;
 
     const bufLen = this.sourceBuffer.buffered.length;
     const end = this.sourceBuffer.buffered.end(bufLen - 1);
     const delay = end - this.video.currentTime;
 
-    // 1. If playback lagged behind significantly (> 5s e.g. tab was in background), soft jump
-    if (delay > 5.0) {
-      this.video.currentTime = end - 0.5;
+    // 1. If lagged > 2.5s (e.g. tab backgrounded), jump to near-live immediately
+    if (delay > 2.5) {
+      this.video.currentTime = end - 0.3;
       this.video.playbackRate = 1.0;
       return;
     }
 
-    // 2. Gentle micro-speedup for seamless live edge synchronization without frame drops
-    if (delay > 2.0) {
-      this.video.playbackRate = 1.08; // 8% gentle speedup (smooth & imperceptible)
-    } else if (delay < 0.6) {
-      this.video.playbackRate = 1.0;  // Normal 1.0x speed
+    // 2. If lagged 1-2.5s, gentle 5% speedup (imperceptible to human eye)
+    if (delay > 1.0) {
+      this.video.playbackRate = 1.05;
+    } else if (delay < 0.4) {
+      this.video.playbackRate = 1.0;
     }
   }
 
   /**
-   * Gap & Stall Recovery Handler.
+   * Gap & Stall Recovery - skips over MSE buffer gaps.
    */
   handleStall() {
     if (!this.video || !this.sourceBuffer || this.sourceBuffer.buffered.length === 0) return;
@@ -199,50 +229,141 @@ class MSEPlayer {
       const bStart = this.sourceBuffer.buffered.start(i);
       const bEnd = this.sourceBuffer.buffered.end(i);
 
-      // If current time is stuck just before or between buffered ranges, skip gap
-      if (curTime < bStart && (bStart - curTime) < 0.5) {
+      if (curTime < bStart && (bStart - curTime) < 1.0) {
         this.video.currentTime = bStart + 0.05;
         this.video.play().catch(() => {});
         return;
       }
     }
+
+    // If we're past all buffered ranges, jump to latest
+    if (this.sourceBuffer.buffered.length > 0) {
+      const lastEnd = this.sourceBuffer.buffered.end(this.sourceBuffer.buffered.length - 1);
+      if (curTime > lastEnd + 0.5 || curTime < this.sourceBuffer.buffered.start(0)) {
+        this.video.currentTime = lastEnd - 0.1;
+        this.video.play().catch(() => {});
+      }
+    }
   }
 
   /**
-   * Periodic playback health check.
+   * Periodic playback health check with stale stream detection.
    */
   checkAndRecoverPlayback() {
-    if (!this.video || !this.sourceBuffer || this.sourceBuffer.buffered.length === 0) return;
+    if (!this.video || !this.sourceBuffer) return;
+
+    // Stale stream detection: if no data received for STALE_THRESHOLD_MS, force full reset
+    const timeSinceData = Date.now() - this.lastDataTime;
+    if (timeSinceData > this.STALE_THRESHOLD_MS && this.hasInitialPlaybackStarted) {
+      console.warn(`[MSEPlayer] Stream stale for ${(timeSinceData / 1000).toFixed(1)}s - forcing full MSE reset...`);
+      this.resetPipeline();
+      return;
+    }
+
+    if (this.sourceBuffer.buffered.length === 0) return;
 
     if (this.video.paused && this.hasInitialPlaybackStarted) {
       this.video.play().catch(() => {});
     }
 
-    // Ensure currentTime is within a valid buffered range
+    // Ensure currentTime is within valid range
     const curTime = this.video.currentTime;
     const bufLen = this.sourceBuffer.buffered.length;
     const end = this.sourceBuffer.buffered.end(bufLen - 1);
 
     if (curTime > end) {
-      this.video.currentTime = end - 0.2;
+      this.video.currentTime = end - 0.1;
     }
   }
 
   /**
+   * Full MSE pipeline reset - destroys and recreates MediaSource.
+   * Used when stream goes stale to force a clean reconnect.
+   */
+  resetPipeline() {
+    if (this.isDestroyed) return;
+
+    // Close WebSocket
+    if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onerror = null;
+      this.ws.onclose = null;
+      try { this.ws.close(); } catch (e) {}
+      this.ws = null;
+    }
+
+    // Abort source buffer
+    if (this.sourceBuffer && this.mediaSource && this.mediaSource.readyState === 'open') {
+      try { this.sourceBuffer.abort(); } catch (e) {}
+    }
+    this.sourceBuffer = null;
+
+    // Clean up old MediaSource
+    if (this.mediaSource) {
+      if (this.onSourceOpen) {
+        this.mediaSource.removeEventListener('sourceopen', this.onSourceOpen);
+      }
+    }
+    this.mediaSource = null;
+
+    if (this.objectUrl) {
+      try { URL.revokeObjectURL(this.objectUrl); } catch (e) {}
+      this.objectUrl = null;
+    }
+
+    // Reset state
+    this.queue = [];
+    this.hasInitialPlaybackStarted = false;
+    this.lastDataTime = Date.now();
+
+    // Recreate fresh MediaSource pipeline
+    this.mediaSource = new MediaSource();
+    this.objectUrl = URL.createObjectURL(this.mediaSource);
+
+    this.onSourceOpen = () => {
+      if (this.isDestroyed) return;
+      this.setupSourceBuffer();
+      this.connectWebSocket();
+    };
+    this.mediaSource.addEventListener('sourceopen', this.onSourceOpen);
+
+    this.video.src = this.objectUrl;
+    this.onStatusChange('reconnecting');
+  }
+
+  /**
    * Prunes played media buffers to keep client memory minimal.
+   * Keeps only 10s of played-back buffer.
    */
   pruneBuffer() {
     if (!this.sourceBuffer || this.sourceBuffer.updating || this.sourceBuffer.buffered.length === 0) return;
     const start = this.sourceBuffer.buffered.start(0);
     const currentTime = this.video.currentTime;
 
-    // Prune buffer older than 15 seconds
-    if (currentTime - start > 15) {
+    if (currentTime - start > 10) {
       try {
-        this.sourceBuffer.remove(start, currentTime - 6);
+        this.sourceBuffer.remove(start, currentTime - 4);
       } catch (e) {
         // Ignore
       }
+    }
+  }
+
+  /**
+   * Emergency buffer prune when QuotaExceededError occurs.
+   */
+  emergencyPrune() {
+    if (!this.sourceBuffer || this.sourceBuffer.updating || this.sourceBuffer.buffered.length === 0) return;
+    try {
+      const start = this.sourceBuffer.buffered.start(0);
+      const end = this.sourceBuffer.buffered.end(this.sourceBuffer.buffered.length - 1);
+      // Remove everything except last 2 seconds
+      if (end - start > 2) {
+        this.sourceBuffer.remove(start, end - 2);
+      }
+    } catch (e) {
+      // Ignore
     }
   }
 
@@ -294,4 +415,3 @@ class MSEPlayer {
 }
 
 window.MSEPlayer = MSEPlayer;
-

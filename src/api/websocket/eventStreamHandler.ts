@@ -9,6 +9,7 @@ import { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
 import { AIAnalyticsEngine } from '../../ai/AIAnalyticsEngine';
 import { StreamManager } from '../../core/StreamManager';
+import { LoadGovernor } from '../../core/LoadGovernor';
 import { createLogger } from '../../utils/logger';
 
 const logger = createLogger('EventStreamWS');
@@ -18,6 +19,7 @@ const connectedClients = new Set<WebSocket>();
 export async function registerEventStreamWs(server: FastifyInstance): Promise<void> {
   const aiEngine = AIAnalyticsEngine.getInstance();
   const streamManager = StreamManager.getInstance();
+  const loadGovernor = LoadGovernor.getInstance();
 
   // Listen to AI detections and broadcast to clients
   aiEngine.on('detectionEvent', (data: any) => {
@@ -40,6 +42,14 @@ export async function registerEventStreamWs(server: FastifyInstance): Promise<vo
     broadcast({
       type: 'STREAM_STATUS_CHANGED',
       ...data
+    });
+  });
+
+  // Listen to Load Governor tier adjustments
+  loadGovernor.on('tierChanged', (metrics: any) => {
+    broadcast({
+      type: 'GOVERNOR_TIER_CHANGED',
+      metrics
     });
   });
 
