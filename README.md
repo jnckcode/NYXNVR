@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![NYX NVR Logo](https://img.shields.io/badge/NYX-NVR%20v1.1.0-FF8C00?style=for-the-badge&logo=shield&logoColor=black)
+![NYX NVR Logo](https://img.shields.io/badge/NYX-NVR%20v1.2.0-FF8C00?style=for-the-badge&logo=shield&logoColor=black)
 [![Node.js Version](https://img.shields.io/badge/Node.js-v18%20|%20v20%20|%20v22-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![Fastify](https://img.shields.io/badge/Fastify-v5.2-000000?style=for-the-badge&logo=fastify&logoColor=white)](https://fastify.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-v5.7-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -12,7 +12,7 @@
 **Next-Generation Edge CCTV & AI Surveillance Platform**  
 *Platform perekam video CCTV pintar, super ringan, hemat daya, dan bebas biaya lisensi bulanan. Dirancang khusus untuk berjalan mulus di komputer Windows harian maupun perangkat edge murah seperti STB Android TV bekas (HG680-P / B860H RAM 2GB) bertenaga Armbian Linux.*
 
-[Fitur Utama](#-fitur-utama) • [Dukungan Kamera CCTV](#-dukungan-perangkat-cctv--panduan-rtsp) • [Instalasi Windows](#-panduan-instalasi-windows-pemula-friendly) • [Instalasi Armbian / STB](#-panduan-instalasi-armbian--stb-hg680-p--b860h-pemula-friendly) • [Service Otomatis](#-pengelolaan-background-service) • [API Docs](#-spesifikasi-rest-api--websocket)
+[Fitur Utama](#-fitur-utama) • [Detail Optimasi Performa](#-detail-rekayasa-optimasi-performa-low-spec--stb-ready) • [Dukungan Kamera CCTV](#-dukungan-perangkat-cctv--panduan-rtsp) • [Instalasi Windows](#-panduan-instalasi-windows-pemula-friendly) • [Instalasi Armbian / STB](#-panduan-instalasi-armbian--stb-hg680-p--b860h-pemula-friendly) • [API Docs](#-spesifikasi-rest-api--websocket)
 
 </div>
 
@@ -21,16 +21,17 @@
 ## 📑 Daftar Isi
 1. [Arsitektur & Keunggulan](#-arsitektur--keunggulan)
 2. [Fitur Utama](#-fitur-utama)
-3. [Dukungan Perangkat CCTV & Panduan RTSP](#-dukungan-perangkat-cctv--panduan-rtsp)
-4. [Kebutuhan Sistem (Hardware & Software)](#-kebutuhan-sistem)
-5. [Panduan Instalasi Windows (Pemula-Friendly)](#-panduan-instalasi-windows-pemula-friendly)
-6. [Panduan Instalasi Armbian / STB HG680-P / B860H (Pemula-Friendly)](#-panduan-instalasi-armbian--stb-hg680-p--b860h-pemula-friendly)
-7. [Pengelolaan Background Service (Jalan Otomatis Saat Boot)](#-pengelolaan-background-service)
-8. [Fitur Cerdas: Deteksi Port Bentrok Otomatis](#-fitur-cerdas-deteksi-port-bentrok-otomatis)
-9. [Mesin Auto-Delete & Retensi Penyimpanan](#-mesin-auto-delete--retensi-penyimpanan)
-10. [Spesifikasi REST API & WebSocket](#-spesifikasi-rest-api--websocket)
-11. [Cara Uninstall & Pembersihan](#-cara-uninstall--pembersihan)
-12. [Pertanyaan Sering Diajukan (FAQ)](#-pertanyaan-sering-diajukan-faq)
+3. [Detail Rekayasa Optimasi Performa (Low-Spec & STB Ready)](#-detail-rekayasa-optimasi-performa-low-spec--stb-ready)
+4. [Dukungan Perangkat CCTV & Panduan RTSP](#-dukungan-perangkat-cctv--panduan-rtsp)
+5. [Kebutuhan Sistem (Hardware & Software)](#-kebutuhan-sistem)
+6. [Panduan Instalasi Windows (Pemula-Friendly)](#-panduan-instalasi-windows-pemula-friendly)
+7. [Panduan Instalasi Armbian / STB HG680-P / B860H (Pemula-Friendly)](#-panduan-instalasi-armbian--stb-hg680-p--b860h-pemula-friendly)
+8. [Pengelolaan Background Service (Jalan Otomatis Saat Boot)](#-pengelolaan-background-service)
+9. [Fitur Cerdas: Deteksi Port Bentrok Otomatis](#-fitur-cerdas-deteksi-port-bentrok-otomatis)
+10. [Mesin Auto-Delete & Retensi Penyimpanan](#-mesin-auto-delete--retensi-penyimpanan)
+11. [Spesifikasi REST API & WebSocket](#-spesifikasi-rest-api--websocket)
+12. [Cara Uninstall & Pembersihan](#-cara-uninstall--pembersihan)
+13. [Pertanyaan Sering Diajukan (FAQ)](#-pertanyaan-sering-diajukan-faq)
 
 ---
 
@@ -68,14 +69,50 @@ flowchart TD
   - **Tahap 1 (Motion Pre-filter 640x360):** Mendeteksi perubahan pixel pada frame raw RGB 640x360 (2 fps) dengan algoritma komputasi ringan berkecepatan tinggi. Jika kondisi ruangan sunyi, AI inference dilewati sehingga CPU tetap 0%.
   - **Tahap 2 (YOLOv8n ONNX Worker 640x640):** Begitu ada gerakan, frame 640x360 resolusi tajam langsung dialirkan ke worker thread YOLOv8n ONNX tanpa perlu decode ulang, mendeteksi manusia, kendaraan, hewan, dll. dengan akurasi tinggi bahkan untuk objek yang jauh.
   - **ROI Polygon Mask:** Atur area deteksi langsung di layar (misal: hanya pantau pintu gerbang, abaikan jalan raya umum).
+- **🎛️ Dynamic Adaptive Load Governor (SBC & Potato Optimization):** Sistem cerdas yang memantau latensi AI dan otomatis mengadaptasi tingkat sampling komputasi (Tier: 🟢 *Performance*, 🟡 *Balanced*, 🔴 *Eco / Potato*) untuk mencegah *thermal throttling* pada STB ARM / Mini PC Celeron.
+- **🎯 Dynamic AI Tuning & COCO 80 Class Filtering:** Slider interaktif untuk *Confidence Threshold* (10% - 95%) dan *IoU NMS Threshold* (10% - 90%) dengan preset sekali klik (🛡️ *Security*, 📱 *Smart Home*, 🌐 *All 80 Classes*).
 - **🔌 Deteksi Port Bebas Otomatis (Auto-Port Detection):** Jika port `3000` sedang dipakai oleh aplikasi lain, NYX NVR otomatis mencari dan menggunakan port kosong berikutnya (`3001`, `3002`, dst.) tanpa error atau crash.
 - **⏱️ Auto-Delete Rekaman Berdasarkan Waktu:** 
   - Tentukan lama penyimpanan dalam **Jam** atau **Hari** (misal: 6 jam, 24 jam, 3 hari, 7 hari, 14 hari, 30 hari).
   - Opsi otomatis membersihkan file foto snapshot AI (`.jpg`) dan log riwayat lama.
   - Tombol **"Purge Expired Now"** untuk menghapus rekaman basi secara instan.
   - Proteksi darurat ambang disk (otomatis menghapus rekaman tertua jika disk mencapai 90%).
-- **🎨 Tampilan Industrial Brutalist:** Tema gelap bertema hazard amber yang elegan, hemat daya layar, responsif di HP/Tablet/Komputer, dengan grid fleksibel (1x1, 2x2, 3x3, 4x4) dan mode fokus.
+- **🎨 Tampilan Industrial Brutalist:** Tema gelap bertema hazard amber yang elegan, hemat daya layar, responsif di HP/Tablet/Komputer, dengan grid fleksibel (1x1, 2x2, 3x3, 4x4) dan mode fokus kamera tunggal.
 - **📡 Auto-Discovery Kamera:** Pindai jaringan Wi-Fi/LAN lokal otomatis untuk mendeteksi kamera ONVIF & SSDP dalam 1 klik.
+
+---
+
+## 🏎️ Detail Rekayasa Optimasi Performa (Low-Spec & STB Ready)
+
+NYX NVR dirancang secara khusus untuk berjalan stabil 24/7 di perangkat hemat daya (seperti STB HG680-P / B860H Quad-Core ARM Cortex-A53 RAM 2GB) tanpa *overheating* dan tanpa *memory leak*. Berikut rincian rekayasa optimasi yang diterapkan:
+
+### 1. 🟢 Adaptive Load Governor (`src/core/LoadGovernor.ts`)
+Sistem secara *real-time* menghitung *rolling average* durasi inferensi AI dan responsivitas event loop Node.js untuk mengatur beban operasional ke dalam 3 tier adaptif:
+
+| Tier Operasional | Kondisi Latensi | Sampling Rate AI | Interval Heartbeat | Strategi Throttling |
+|---|---|---|---|---|
+| 🟢 **PERFORMANCE** | $< 120\text{ ms}$ | **2.0 FPS** | $1000\text{ ms}$ | Full burst mode, latency prioritas tinggi |
+| 🟡 **BALANCED** | $120 - 250\text{ ms}$ | **1.5 FPS** | $1500\text{ ms}$ | Dynamic pacing, keseimbangan CPU & FPS |
+| 🔴 **ECO / POTATO** | $> 250\text{ ms}$ | **1.0 FPS** | $2500\text{ ms}$ | Cooldown diperpanjang, proteksi over-temperature |
+
+> *Dilengkapi dengan **Hysteresis Hold-Time** (5 detik) untuk mencegah osilasi/flapping antar-tier saat terjadi lonjakan komputasi sesaat.*
+
+### 2. ⚡ Conditional Decoding & Pure Remux Passthrough
+- **Zero Re-encoding Ingestion:** Jalur perekaman ke disk dan pengaliran live ke WebSocket 100% menggunakan flag `-c:v copy` (tanpa encode/decode CPU).
+- **Conditional Motion Pipe:** Jalur ekstraksi frame video decoding FFmpeg (`-vf fps=2,scale=160:120 pipe:3`) **hanya diaktifkan jika saklar AI kamera bernilai ON (`ai_enabled = 1`)**. Jika AI mati, kamera murni berjalan dalam mode passthrough murni dengan konsumsi CPU **$< 0.5\%$**.
+
+### 3. 🌐 Anti-Stutter MSE Player & Smooth Micro-Rate Sync
+- **Bukan Hard Seeking:** Pemutar video browser menghindari *hard seek jump* (`currentTime = end - 0.2`) yang sering merusak buffer GOP dan menyebabkan video macet setiap 2 detik.
+- **Dynamic Micro-Rate Sync:** Player mempercepat pemutaran secara mikro (`playbackRate = 1.08x`) jika keterlambatan buffer $> 2.0$ detik, dan kembali ke `1.0x` begitu latensi turun ke $< 0.6$ detik. Hasilnya: siaran langsung tetap *real-time*, mulus, dan bebas jeda (*zero stuttering*).
+- **Clean Lifecycle & Memory Revocation:** Saat berpindah tab navigasi, instance MSE dan WebSocket di-*teardown* secara bersih dan Blob Object URL dicabut (`URL.revokeObjectURL`) untuk mencegah akumulasi memori browser.
+
+### 4. 💾 SQLite WAL Engine & Metadata Deduplication
+- **Write-Ahead Logging (`WAL`):** Operasi penulisan log event dan segmen video tidak pernah mengunci (*lock*) operasi pembacaan dashboard.
+- **Zero-Sweep Indexing:** Metadata segmen video diekstrak langsung dari log stderr FFmpeg saat file selesai ditulis, tanpa melakukan pemindaian direktori disk (*directory sweep*) berulang yang memicu lonjakan I/O harddisk.
+- **Unique Constraint Indexing:** Indeks unik `idx_recordings_filepath` memastikan integritas database tanpa baris duplikat.
+
+### 5. 🛡️ Resilient Reconnection Backoff
+- Kamera offline atau jaringan terputus ditangani dengan **Exponential Backoff** ($3\text{s} \to 6\text{s} \to 11\text{s} \to 20\text{s} \to 35\text{s} \to \max 60\text{s}$) dengan batas waktu socket probe ketat (2s analyze / 5s timeout) agar koneksi yang putus tidak menimbulkan lonjakan 100% CPU.
 
 ---
 
