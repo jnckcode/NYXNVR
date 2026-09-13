@@ -1,4 +1,4 @@
-# 🛡️ NYX NVR (Antigravity Network Video Recorder)
+# 🛡️ NYX NVR (Next-Gen Network Video Recorder)
 
 <div align="center">
 
@@ -297,9 +297,9 @@ Banyak software lain (seperti Node.js dev server, Docker, React, Next.js, Grafan
 [WARN] [PortFinder] [PORT CONFLICT] Desired port 3000 is already occupied by another service.
 [INFO] [PortFinder] Automatically scanning for the next available port starting from 3001...
 [INFO] [PortFinder] [PORT ACQUIRED] Auto-selected available port: 3001
-[INFO] Antigravity NVR Web Server listening at http://localhost:3001
+[INFO] NYX NVR Web Server listening at http://localhost:3001
 ====================================================
-   Antigravity NVR IS RUNNING AND READY!
+   NYX NVR IS RUNNING AND READY!
    Web Dashboard: http://localhost:3001 (auto-shifted from 3000)
 ====================================================
 ```
@@ -378,4 +378,4 @@ J: Cara termudah dan paling aman tanpa perlu sewa IP Publik adalah menginstall *
 ---
 
 ## 📄 Lisensi
-Didistribusikan di bawah lisensi **MIT License** © 2026 NYX NVR & Antigravity Engineering. Bebas digunakan untuk keperluan pribadi, rumah tangga, toko kelontong, kantor, hingga proyek komersial.
+Didistribusikan di bawah lisensi **MIT License** © 2026 NYX NVR & jnckcode. Bebas digunakan untuk keperluan pribadi, rumah tangga, toko kelontong, kantor, hingga proyek komersial.

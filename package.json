@@ -1,7 +1,7 @@
 {
-  "name": "antigravity-nvr",
+  "name": "nyx-nvr",
   "version": "1.2.0",
-  "description": "Node.js Lightweight Network Video Recorder with Single Ingestion, Dynamic Two-Stage AI, and Zero-Config UX",
+  "description": "NYX NVR - Lightweight Network Video Recorder with Single Ingestion, Dynamic Two-Stage AI, and Zero-Config UX",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc && node -e \"require('fs').cpSync('src/public', 'dist/public', {recursive: true})\"",
@@ -29,7 +29,7 @@
     "iot",
     "arm64"
   ],
-  "author": "Antigravity Engineering",
+  "author": "jnckcode",
   "license": "MIT",
   "dependencies": {
     "@fastify/cors": "^10.0.2",
