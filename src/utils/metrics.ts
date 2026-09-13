@@ -1,0 +1,114 @@
+/**
+ * @file metrics.ts
+ * @description System metrics monitoring utility measuring CPU load and RAM footprint for ARM64 STB environments.
+ * @functions getSystemMetrics, getProcessMemoryMb
+ * @dependencies os, types/system
+ */
+
+import os from 'os';
+import { SystemMetrics, ProcessMemoryInfo } from '../types/system';
+
+let lastCpuMeasure = {
+  idle: 0,
+  total: 0,
+  time: Date.now()
+};
+
+function getCpuTimes(): { idle: number; total: number } {
+  const cpus = os.cpus();
+  let idle = 0;
+  let total = 0;
+
+  for (const cpu of cpus) {
+    for (const type in cpu.times) {
+      total += (cpu.times as any)[type];
+    }
+    idle += cpu.times.idle;
+  }
+
+  return { idle, total };
+}
+
+// Initialize first measurement
+const initial = getCpuTimes();
+lastCpuMeasure = { ...initial, time: Date.now() };
+
+/**
+ * Calculates current CPU usage percentage across all cores.
+ */
+function calculateCpuUsage(): number {
+  const current = getCpuTimes();
+  const idleDiff = current.idle - lastCpuMeasure.idle;
+  const totalDiff = current.total - lastCpuMeasure.total;
+
+  lastCpuMeasure = { ...current, time: Date.now() };
+
+  if (totalDiff <= 0) return 0;
+  const usage = 100 - Math.round((idleDiff / totalDiff) * 100);
+  return Math.max(0, Math.min(100, usage));
+}
+
+let lastProcessCpu = process.cpuUsage();
+let lastProcessTime = Date.now();
+
+/**
+ * Calculates current CPU usage percentage of the NVR Node.js process itself.
+ */
+function calculateProcessCpuUsage(): number {
+  const currentCpu = process.cpuUsage(lastProcessCpu);
+  const currentTime = Date.now();
+  const timeDiffMs = currentTime - lastProcessTime;
+
+  lastProcessCpu = process.cpuUsage();
+  lastProcessTime = currentTime;
+
+  if (timeDiffMs <= 0) return 0;
+
+  const numCores = os.cpus().length || 1;
+  const totalMicroSec = currentCpu.user + currentCpu.system;
+  // Convert microseconds to fraction of total time across cores
+  const percent = Math.round((totalMicroSec / (timeDiffMs * 1000 * numCores)) * 100);
+  return Math.max(0, Math.min(100, percent));
+}
+
+/**
+ * Returns formatted process memory metrics in Megabytes.
+ */
+export function getProcessMemoryMb(): ProcessMemoryInfo {
+  const mem = process.memoryUsage();
+  return {
+    rssMb: Math.round((mem.rss / (1024 * 1024)) * 10) / 10,
+    heapTotalMb: Math.round((mem.heapTotal / (1024 * 1024)) * 10) / 10,
+    heapUsedMb: Math.round((mem.heapUsed / (1024 * 1024)) * 10) / 10,
+    externalMb: Math.round((mem.external / (1024 * 1024)) * 10) / 10
+  };
+}
+
+/**
+ * Returns comprehensive hardware and system metrics.
+ */
+export function getSystemMetrics(activeStreamsCount: number = 0, activeAICount: number = 0): SystemMetrics {
+  const cpus = os.cpus();
+  const totalMemMb = Math.round(os.totalmem() / (1024 * 1024));
+  const freeMemMb = Math.round(os.freemem() / (1024 * 1024));
+  const usedMemMb = totalMemMb - freeMemMb;
+  const systemCpu = calculateCpuUsage();
+  const processCpu = calculateProcessCpuUsage();
+
+  return {
+    uptimeSeconds: Math.round(process.uptime()),
+    platform: os.platform(),
+    arch: os.arch(),
+    cpuModel: cpus.length > 0 ? cpus[0].model : 'ARM Cortex-A53',
+    cpuCores: cpus.length,
+    cpuUsagePercent: processCpu, // Default CPU metric focuses on NVR Node process footprint
+    processCpuPercent: processCpu,
+    systemCpuPercent: systemCpu,
+    totalMemMb,
+    freeMemMb,
+    usedMemMb,
+    processMemory: getProcessMemoryMb(),
+    activeStreamsCount,
+    activeAICount
+  };
+}

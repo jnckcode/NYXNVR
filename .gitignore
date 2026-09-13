@@ -1,0 +1,89 @@
+# ==============================================================================
+# NYX NVR - Git Ignore Configuration
+# ==============================================================================
+
+# Node.js & Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+
+# Build Output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# SQLite Database & Runtime Files
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm
+*.db
+*.sqlite
+
+# NVR Video Storage & Snapshots
+storage/recordings/*
+!storage/recordings/.gitkeep
+storage/snapshots/*
+!storage/snapshots/.gitkeep
+*.mp4
+*.mkv
+*.avi
+*.jpg
+*.jpeg
+*.png
+*.webp
+
+# Temporary & Scratch Files
+scratch/
+tmp/
+temp/
+*.tmp
+.daemon_pid
+.runtime_port
+.agent/
+.agents/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# Logs
+logs/
+*.log
+
+# OS Generated Files
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+ehthumbs.db
+
+# IDE & Editor Configs
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ==============================================================================
+# Markdown Files Policy:
+# Abaikan seluruh file .md KECUALI README.md / readme.md
+# ==============================================================================
+*.md
+**/*.md
+
+# Kecualikan README.md (case-insensitive)
+!README.md
+!readme.md
+!**/README.md
+!**/readme.md

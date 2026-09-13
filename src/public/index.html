@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NYX NVR // TACTICAL EDGE SURVEILLANCE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="dark-theme industrial-theme">
+  <div class="app-layout">
+    
+    <!-- Industrial Brutalist Collapsible Left Vertical Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-logo" title="NYX NVR // Optical Surveillance Core">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="12 2 21 6.5 21 17.5 12 22 3 17.5 3 6.5" stroke="#f59e0b" stroke-width="1.8" stroke-linejoin="round" fill="rgba(245, 158, 11, 0.08)"/>
+            <path d="M7 8.5V15.5L17 8.5V15.5" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="12" r="2.2" fill="#ff9800"/>
+            <line x1="12" y1="3.5" x2="12" y2="5.5" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="12" y1="18.5" x2="12" y2="20.5" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="4.5" y1="12" x2="6.5" y2="12" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="17.5" y1="12" x2="19.5" y2="12" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">NYX <span class="brand-badge">// NVR</span></span>
+          <span class="brand-sub">TACTICAL SURVEILLANCE</span>
+        </div>
+        <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar (Ctrl+B)" onclick="toggleSidebar()">
+          <svg class="toggle-icon-collapse" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Navigation Menu with Tactical Vector Icons -->
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">MONITORING</div>
+        <button class="nav-item active" data-tab="live">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </span>
+          <span class="nav-label">Live Grid</span>
+          <span class="nav-badge live-pulse" id="nav-live-badge">LIVE</span>
+        </button>
+        <button class="nav-item" data-tab="cameras">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </span>
+          <span class="nav-label">Cameras &amp; Setup</span>
+          <span class="nav-badge" id="nav-cam-count">0</span>
+        </button>
+        <button class="nav-item" data-tab="events">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="22" y1="12" x2="18" y2="12"></line>
+              <line x1="6" y1="12" x2="2" y2="12"></line>
+              <line x1="12" y1="6" x2="12" y2="2"></line>
+              <line x1="12" y1="22" x2="12" y2="18"></line>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </span>
+          <span class="nav-label">AI Event Log</span>
+          <span class="nav-badge event-badge" id="nav-events-badge">AI</span>
+        </button>
+        <button class="nav-item" data-tab="recordings">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polygon points="10 8 16 12 10 16 10 8"></polygon>
+            </svg>
+          </span>
+          <span class="nav-label">Playback &amp; Archive</span>
+        </button>
+
+        <div class="nav-section-title mt-3">SYSTEM</div>
+        <button class="nav-item" data-tab="settings">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Storage &amp; Settings</span>
+        </button>
+      </nav>
+
+      <!-- Hardware Telemetry Footer -->
+      <div class="sidebar-telemetry">
+        <div class="telemetry-header">
+          <span class="telemetry-title">STB TELEMETRY</span>
+          <span class="telemetry-badge-active" id="telemetry-status-badge">ONLINE</span>
+        </div>
+        <div class="telemetry-metric">
+          <div class="metric-meta">
+            <span>CPU</span>
+            <span id="sb-cpu-val" class="font-mono">0%</span>
+          </div>
+          <div class="metric-bar">
+            <div class="metric-bar-fill" id="sb-cpu-bar" style="width: 0%"></div>
+          </div>
+        </div>
+        <div class="telemetry-metric">
+          <div class="metric-meta">
+            <span>RAM</span>
+            <span id="sb-ram-val" class="font-mono">0 MB</span>
+          </div>
+          <div class="metric-bar">
+            <div class="metric-bar-fill" id="sb-ram-bar" style="width: 0%"></div>
+          </div>
+        </div>
+        <div class="telemetry-metric">
+          <div class="metric-meta">
+            <span>DISK</span>
+            <span id="sb-disk-val" class="font-mono">0%</span>
+          </div>
+          <div class="metric-bar">
+            <div class="metric-bar-fill" id="sb-disk-bar" style="width: 0%"></div>
+          </div>
+        </div>
+        <div class="telemetry-engine">
+          <span class="engine-dot"></span>
+          <span class="engine-label">AI Engine: <strong id="sb-ai-engine">YOLOv8 Active</strong></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Viewport Area -->
+    <div class="main-viewport">
+      
+      <!-- Ultra-Slim Topbar (44px) -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="topbar-mobile-toggle" onclick="toggleSidebar()" title="Toggle Menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div class="topbar-breadcrumb">
+            <span class="breadcrumb-app">NYX NVR</span>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current" id="topbar-title">Live Grid</span>
+          </div>
+        </div>
+
+        <div class="topbar-center">
+          <!-- Quick Grid Selector (Integrated into Topbar) -->
+          <div class="topbar-grid-controls" id="topbar-grid-controls">
+            <button class="topbar-grid-btn" data-grid="1" title="Single 1x1 View">1x1</button>
+            <button class="topbar-grid-btn active" data-grid="4" title="2x2 Quad Grid">2x2</button>
+            <button class="topbar-grid-btn" data-grid="9" title="3x3 Multi Grid">3x3</button>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Continuous Recording Indicator -->
+          <div class="rec-indicator" title="Continuous MP4 Segment Recording Active">
+            <span class="rec-dot"></span>
+            <span class="rec-text">REC</span>
+          </div>
+
+          <!-- Live Digital Clock -->
+          <div class="topbar-clock" id="topbar-clock">00:00:00</div>
+
+          <!-- Fullscreen Toggle -->
+          <button class="topbar-action-btn" id="btn-fullscreen" title="Toggle Fullscreen Mode" onclick="toggleFullscreen()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Scrollable Content Viewport -->
+      <main class="content-viewport">
+
+        <!-- TAB 1: LIVE MULTI-CAMERA VIEW -->
+        <section id="tab-live" class="tab-content active">
+          <div class="section-toolbar">
+            <div class="toolbar-left">
+              <div class="events-title-wrap">
+                <h2>Live Surveillance Grid</h2>
+                <div class="live-pulse-badge">
+                  <span class="live-dot-pulse"></span>
+                  <span id="live-camera-count">0 Streams Active</span>
+                </div>
+              </div>
+            </div>
+            <div class="toolbar-right">
+              <button class="btn btn-secondary btn-sm" onclick="triggerDiscoveryScan()" title="Auto-scan local subnet">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:-2px;margin-right:4px;">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.3-4.3"></path>
+                </svg>
+                SCAN SUBNET
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="openAddCameraModal()">
+                <span>+ ADD CAMERA</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Live Video Grid -->
+          <div id="live-grid" class="camera-grid grid-2x2">
+            <!-- Rendered dynamically by app.js -->
+          </div>
+        </section>
+
+        <!-- TAB 2: CAMERAS & AUTO-DISCOVERY -->
+        <section id="tab-cameras" class="tab-content">
+          <div class="section-toolbar">
+            <div class="toolbar-left">
+              <h2>Camera Management &amp; Zero-Config Discovery</h2>
+              <span class="text-muted">Auto-detect ONVIF and RTSP CCTV in your local subnet</span>
+            </div>
+            <div class="toolbar-right">
+              <button class="btn btn-accent" id="btn-scan-network" onclick="triggerDiscoveryScan()">
+                <span class="btn-icon-spin" id="scan-spinner">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:-2px;margin-right:4px;">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.3-4.3"></path>
+                  </svg>
+                </span> SCAN LOCAL NETWORK
+              </button>
+              <button class="btn btn-primary" onclick="openAddCameraModal()">
+                <span>+ Manual Ingest</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Discovery Scanner Result Panel -->
+          <div id="discovery-panel" class="card discovery-card hidden">
+            <div class="card-header">
+              <h3>Discovered Network Devices (<span id="disc-count">0</span> found)</h3>
+              <button class="btn-close" onclick="closeDiscoveryPanel()">×</button>
+            </div>
+            <div class="card-body">
+              <div id="discovery-list" class="discovery-grid">
+                <!-- Dynamic discovered camera cards -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Configured Cameras Table -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Registered Ingestion Streams</h3>
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Camera Name</th>
+                      <th>RTSP Source URL</th>
+                      <th>Stream Ingestion</th>
+                      <th>AI Detection</th>
+                      <th>ROI Zone</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="camera-table-body">
+                    <!-- Dynamically populated -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: AI EVENT LOG & GALLERY -->
+        <section id="tab-events" class="tab-content">
+          <!-- AI KPI Quick Stats (Industrial Tactical Monitors) -->
+          <div class="events-kpi-bar">
+            <div class="events-kpi-card">
+              <div class="kpi-icon kpi-icon-amber">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <line x1="12" y1="2" x2="12" y2="6"></line>
+                  <line x1="12" y1="18" x2="12" y2="22"></line>
+                  <line x1="2" y1="12" x2="6" y2="12"></line>
+                  <line x1="18" y1="12" x2="22" y2="12"></line>
+                </svg>
+              </div>
+              <div class="kpi-content">
+                <div class="kpi-value" id="kpi-total-events">0</div>
+                <div class="kpi-label">TOTAL DETECTIONS</div>
+              </div>
+            </div>
+            <div class="events-kpi-card">
+              <div class="kpi-icon kpi-icon-green">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </div>
+              <div class="kpi-content">
+                <div class="kpi-value" id="kpi-person-events">0</div>
+                <div class="kpi-label">PERSONS DETECTED</div>
+              </div>
+            </div>
+            <div class="events-kpi-card">
+              <div class="kpi-icon kpi-icon-orange">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="1" y="3" width="15" height="13"></rect>
+                  <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+                  <circle cx="5.5" cy="18.5" r="2.5"></circle>
+                  <circle cx="18.5" cy="18.5" r="2.5"></circle>
+                </svg>
+              </div>
+              <div class="kpi-content">
+                <div class="kpi-value" id="kpi-vehicle-events">0</div>
+                <div class="kpi-label">VEHICLES DETECTED</div>
+              </div>
+            </div>
+            <div class="events-kpi-card">
+              <div class="kpi-icon kpi-icon-hazard">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+              </div>
+              <div class="kpi-content">
+                <div class="kpi-value" id="kpi-today-events">0</div>
+                <div class="kpi-label">TODAY'S ALERTS</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section Toolbar with Advanced Filters -->
+          <div class="section-toolbar events-toolbar">
+            <div class="toolbar-left">
+              <div class="events-title-wrap">
+                <h2>AI Detection Events</h2>
+                <div class="live-pulse-badge">
+                  <span class="live-dot-pulse"></span> Live Stream
+                </div>
+              </div>
+              <span class="text-muted" id="events-count-summary">Real-time YOLOv8n detections sorted by newest first</span>
+            </div>
+            <div class="toolbar-right events-filters-wrap">
+              <select id="event-camera-filter" class="form-select" onchange="onEventFilterChange()">
+                <option value="">All Cameras</option>
+              </select>
+              <select id="event-label-filter" class="form-select" onchange="onEventFilterChange()">
+                <option value="">All Objects</option>
+                <option value="person">Person</option>
+                <option value="car">Car</option>
+                <option value="motorcycle">Motorcycle</option>
+                <option value="bicycle">Bicycle</option>
+                <option value="bus">Bus</option>
+                <option value="truck">Truck</option>
+                <option value="dog">Dog</option>
+                <option value="cat">Cat</option>
+              </select>
+              <select id="event-confidence-filter" class="form-select" onchange="onEventFilterChange()">
+                <option value="">Min Confidence: Any</option>
+                <option value="0.25">≥ 25% (Standard)</option>
+                <option value="0.40">≥ 40% (Medium)</option>
+                <option value="0.60">≥ 60% (High)</option>
+                <option value="0.80">≥ 80% (Strict)</option>
+              </select>
+              <input type="date" id="event-date-filter" class="form-input" onchange="onEventFilterChange()" title="Filter by date">
+              
+              <!-- Layout Toggle -->
+              <div class="btn-group" role="group">
+                <button class="btn btn-secondary btn-icon active" id="btn-events-view-grid" onclick="setEventsViewMode('grid')" title="Card Grid View">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                </button>
+                <button class="btn btn-secondary btn-icon" id="btn-events-view-table" onclick="setEventsViewMode('table')" title="Compact Table View">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                  </svg>
+                </button>
+                <button class="btn btn-secondary btn-icon" onclick="resetEventFilters()" title="Reset Filters">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                    <path d="M21 3v5h-5"></path>
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                    <path d="M8 16H3v5"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main Events Container (Grid / Table) -->
+          <div id="events-container-wrap">
+            <div class="events-gallery-grid" id="events-grid">
+              <!-- Event Cards rendered via JS -->
+            </div>
+            <div class="events-table-wrap hidden" id="events-table-container">
+              <table class="events-table">
+                <thead>
+                  <tr>
+                    <th>Snapshot</th>
+                    <th>Camera</th>
+                    <th>Detected Object</th>
+                    <th>Confidence</th>
+                    <th>Timestamp</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="events-table-body">
+                  <!-- Table rows rendered via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Pagination Bar -->
+          <div class="events-pagination-bar" id="events-pagination-container">
+            <div class="pagination-info">
+              <span id="pagination-summary">Showing 0–0 of 0 events</span>
+              <div class="pagination-page-size">
+                <label for="event-page-size">Per page:</label>
+                <select id="event-page-size" class="form-select form-select-sm" onchange="onEventPageSizeChange()">
+                  <option value="12">12</option>
+                  <option value="24" selected>24</option>
+                  <option value="48">48</option>
+                  <option value="96">96</option>
+                </select>
+              </div>
+            </div>
+            <div class="pagination-controls" id="pagination-buttons">
+              <!-- Pagination buttons rendered via JS -->
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 4: PLAYBACK & RECORDINGS -->
+        <section id="tab-recordings" class="tab-content">
+          <div class="section-toolbar">
+            <div class="toolbar-left">
+              <h2>Continuous Video Playback</h2>
+              <span class="text-muted">Zero re-encoding 5-minute MP4 segment archives</span>
+            </div>
+            <div class="toolbar-right">
+              <select id="playback-camera-select" class="form-select" onchange="loadRecordings()">
+                <option value="">Select Camera</option>
+              </select>
+              <input type="date" id="playback-date-select" class="form-input" onchange="loadRecordings()">
+              <button class="btn btn-primary" onclick="loadRecordings()">Search Chunks</button>
+            </div>
+          </div>
+
+          <div class="playback-layout">
+            <!-- Video Player Area -->
+            <div class="playback-player-panel card">
+              <div class="player-wrapper">
+                <video id="playback-video" controls autoplay class="playback-media"></video>
+              </div>
+              <div class="playback-info" id="playback-info-bar">
+                <span>Select a recorded chunk from the timeline to play</span>
+              </div>
+            </div>
+
+            <!-- Segments List -->
+            <div class="playback-list-panel card">
+              <div class="card-header">
+                <h3>MP4 Segments</h3>
+              </div>
+              <div class="card-body p-0">
+                <div id="recordings-list" class="recordings-scroll">
+                  <!-- Rendered list of MP4 segments -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 5: STORAGE & SYSTEM SETTINGS -->
+        <section id="tab-settings" class="tab-content">
+          <div class="section-toolbar">
+            <div class="toolbar-left">
+              <h2>Storage &amp; System Configuration</h2>
+              <span class="text-muted">Dynamic path relocation, AI model upload, and auto-retention</span>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <!-- Storage Mount Configuration Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3>💾 Storage Location &amp; Disk Space</h3>
+              </div>
+              <div class="card-body">
+                <form id="settings-storage-form" onsubmit="saveStorageSettings(event)">
+                  <div class="form-group">
+                    <label for="input-recording-path">Custom Recording Path (USB / Flashdisk / HDD)</label>
+                    <div class="input-with-button">
+                      <input type="text" id="input-recording-path" class="form-input" required placeholder="/mnt/usb/recordings or ./storage/recordings">
+                      <button type="submit" class="btn btn-primary">Apply Path</button>
+                    </div>
+                    <span class="form-hint">Dynamic path: automatically relocates recording segment output without restarting backend.</span>
+                  </div>
+
+                  <!-- Disk Capacity Gauge -->
+                  <div class="disk-meter-box mt-4">
+                    <div class="disk-meta">
+                      <span class="disk-meta-title">Active Mount Point Capacity</span>
+                      <span class="disk-meta-values" id="disk-used-text">0 GB / 0 GB (0%)</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                      <div class="progress-bar-fill" id="disk-progress-bar" style="width: 0%"></div>
+                    </div>
+                    <div class="disk-breakdown mt-2">
+                      <span class="badge badge-info" id="disk-free-badge">Free: 0 GB</span>
+                      <span class="badge badge-warning" id="disk-thresh-badge">Threshold: 85%</span>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- AI Model, Detection Sensitivity & Class Filtering Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3>🧠 YOLOv8 AI Detection, Confidence &amp; Object Filtering</h3>
+              </div>
+              <div class="card-body">
+                <form id="settings-ai-form" onsubmit="saveAiDetectionSettings(event)">
+                  <!-- Model Path -->
+                  <div class="form-group">
+                    <label for="input-model-path">Active ONNX Model File Path</label>
+                    <div class="input-with-button">
+                      <input type="text" id="input-model-path" class="form-input" required placeholder="./models/yolov8n.onnx">
+                      <button type="button" class="btn btn-secondary" onclick="saveModelPathDirect()">Set Path</button>
+                    </div>
+                  </div>
+
+                  <!-- Confidence Threshold Slider -->
+                  <div class="form-group mt-3">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                      <label for="input-ai-confidence" style="margin-bottom: 0;">Detection Confidence Threshold</label>
+                      <span id="val-ai-confidence" class="range-val-badge">40%</span>
+                    </div>
+                    <div class="slider-group">
+                      <input type="range" id="input-ai-confidence" class="form-range" min="10" max="95" step="5" value="40" oninput="updateConfidenceDisplay(this.value)">
+                    </div>
+                    <span class="form-hint">Detections with probability below this value are ignored. Set lower (20%-35%) to detect distant/small objects, or higher (50%-75%) to prevent false positives.</span>
+                  </div>
+
+                  <!-- IoU NMS Threshold Slider -->
+                  <div class="form-group mt-3">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                      <label for="input-ai-iou" style="margin-bottom: 0;">NMS Overlap Threshold (IoU)</label>
+                      <span id="val-ai-iou" class="range-val-badge">45%</span>
+                    </div>
+                    <div class="slider-group">
+                      <input type="range" id="input-ai-iou" class="form-range" min="10" max="90" step="5" value="45" oninput="updateIouDisplay(this.value)">
+                    </div>
+                    <span class="form-hint">Suppresses overlapping boxes for the same object.</span>
+                  </div>
+
+                  <!-- AI Trigger & Execution Mode -->
+                  <div class="form-group mt-3">
+                    <label for="select-ai-mode">AI Trigger Execution Mode</label>
+                    <select id="select-ai-mode" class="form-select">
+                      <option value="0">⚡ Motion-Triggered Burst (Recommended for STB - CPU &lt; 10%)</option>
+                      <option value="1">🔥 Continuous Real-Time Scan (Always Scans @ ~3 FPS)</option>
+                    </select>
+                    <span class="form-hint">Motion-Triggered mode only invokes deep learning when Stage 1 pixel motion occurs.</span>
+                  </div>
+
+                  <!-- Target Object Classes Filter -->
+                  <div class="form-group mt-3">
+                    <label>Target Object Classes (COCO Dataset)</label>
+                    <div class="preset-btn-group">
+                      <button type="button" class="btn btn-secondary btn-sm" onclick="applyClassPreset('security')">🛡️ Security (Person + Vehicles + Pets)</button>
+                      <button type="button" class="btn btn-secondary btn-sm" onclick="applyClassPreset('devices')">📱 Smart Home &amp; Gadgets</button>
+                      <button type="button" class="btn btn-secondary btn-sm" onclick="applyClassPreset('all')">🌐 All 80 Classes</button>
+                    </div>
+
+                    <div class="class-tags-container" id="class-tags-picker">
+                      <!-- Tag pills rendered dynamically or toggled by app.js -->
+                    </div>
+
+                    <input type="hidden" id="input-ai-target-classes" value="person,car,motorcycle,bicycle,bus,truck,dog,cat,cell phone,laptop,chair,backpack,handbag">
+                  </div>
+
+                  <div class="mt-4">
+                    <button type="submit" class="btn btn-primary">Save AI Detection Settings</button>
+                  </div>
+                </form>
+
+                <div class="form-group mt-4 pt-3" style="border-top: 1px solid var(--border-color);">
+                  <label>Upload Custom YOLOv8 Model (.onnx)</label>
+                  <div class="dropzone" id="model-dropzone" onclick="document.getElementById('file-model-upload').click()">
+                    <input type="file" id="file-model-upload" accept=".onnx" style="display: none;" onchange="handleModelUpload(this)">
+                    <div class="dropzone-content">
+                      <span class="dropzone-icon">📤</span>
+                      <span class="dropzone-text">Click or drag &amp; drop <strong>.onnx</strong> model file here</span>
+                      <span class="dropzone-hint">Triggers immediate worker thread hot-reload</span>
+                    </div>
+                  </div>
+                  <div id="upload-status" class="upload-status mt-2"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Retention & Auto-Purge Policy Card -->
+            <div class="card">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h3>⏳ Automatic Retention &amp; Auto-Delete Engine</h3>
+                  <div class="text-muted" style="font-size: 0.78rem; margin-top: 2px;">Time-based video lifecycle management &amp; disk storage optimization</div>
+                </div>
+                <span class="badge badge-amber" id="retention-status-badge">AUTO-DELETE: ACTIVE</span>
+              </div>
+              <div class="card-body">
+                <form id="settings-retention-form" onsubmit="saveRetentionSettings(event)">
+                  <!-- Master Auto-Delete Toggle -->
+                  <div class="form-group" style="padding: 10px 14px; background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: var(--radius-sm); margin-bottom: 1.2rem;">
+                    <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; margin: 0; font-weight: 600;">
+                      <input type="checkbox" id="check-auto-delete-enabled" checked onchange="updateAutoDeleteUIState()">
+                      <span>Enable Automatic Time-Based Purging (Background Worker)</span>
+                    </label>
+                    <span class="form-hint" style="margin-left: 1.8rem; margin-top: 4px;">When active, the background worker scans every 5 minutes and permanently deletes files exceeding the retention duration.</span>
+                  </div>
+
+                  <!-- Quick Retention Presets -->
+                  <div class="form-group mb-2">
+                    <label style="margin-bottom: 6px;">Quick Retention Presets</label>
+                    <div class="retention-preset-group" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <button type="button" class="btn btn-secondary btn-xs" onclick="applyRetentionPreset(6, 'hours')">6 Hours</button>
+                      <button type="button" class="btn btn-secondary btn-xs" onclick="applyRetentionPreset(12, 'hours')">12 Hours</button>
+                      <button type="button" class="btn btn-secondary btn-xs" onclick="applyRetentionPreset(24, 'hours')">24 Hours (1 Day)</button>
+                      <button type="button" class="btn btn-secondary btn-xs" onclick="applyRetentionPreset(3, 'days')">3 Days</button>
+                      <button type="button" class="btn btn-secondary btn-xs" onclick="applyRetentionPreset(7, 'days')">7 Days</button>
+                      <button type="button" class="btn btn-secondary btn-xs" onclick="applyRetentionPreset(14, 'days')">14 Days</button>
+                      <button type="button" class="btn btn-secondary btn-xs" onclick="applyRetentionPreset(30, 'days')">30 Days</button>
+                    </div>
+                  </div>
+
+                  <!-- Custom Duration Value + Unit -->
+                  <div class="form-group mt-3">
+                    <label for="input-retention-val">Custom Retention Duration</label>
+                    <div style="display: flex; gap: 0.6rem;">
+                      <input type="number" id="input-retention-val" class="form-input" min="1" max="8760" required value="7" style="flex: 2;" oninput="updateRetentionSummaryHint()">
+                      <select id="select-retention-unit" class="form-input" style="flex: 1;" onchange="updateRetentionSummaryHint()">
+                        <option value="hours">Hours</option>
+                        <option value="days" selected>Days</option>
+                      </select>
+                    </div>
+                    <!-- Hidden input to maintain compatibility with legacy retention_days handlers -->
+                    <input type="hidden" id="input-retention-days" value="7">
+                    <span class="form-hint" id="retention-summary-hint" style="color: var(--text-amber); font-weight: 500;">Recordings older than 7 Days (168 Hours) will be automatically purged.</span>
+                  </div>
+
+                  <!-- Secondary Snapshot Purge Toggle -->
+                  <div class="form-group mt-3">
+                    <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.88rem;">
+                      <input type="checkbox" id="check-auto-delete-snapshots" checked>
+                      <span>Also purge expired AI detection snapshots &amp; event database records</span>
+                    </label>
+                  </div>
+
+                  <!-- Emergency Disk Threshold -->
+                  <div class="form-group mt-3">
+                    <label for="input-disk-threshold">Emergency Disk Cleanup Threshold (%)</label>
+                    <input type="number" id="input-disk-threshold" class="form-input" min="50" max="98" required value="85">
+                    <span class="form-hint">If disk usage exceeds this percentage, oldest MP4 files are purged immediately to prevent system crash.</span>
+                  </div>
+
+                  <!-- Retention Telemetry Card -->
+                  <div class="retention-telemetry-box" style="margin-top: 1.2rem; padding: 12px 14px; background: #06080b; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 0.82rem;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                      <span class="text-muted">Oldest Recording on Disk:</span>
+                      <strong id="retention-oldest-date" class="font-mono text-amber">Checking...</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                      <span class="text-muted">Last Purge Cycle:</span>
+                      <span id="retention-last-run" class="font-mono">Never run yet</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                      <span class="text-muted">Last Cycle Cleaned:</span>
+                      <span id="retention-last-purged" class="font-mono">0 files (0 B)</span>
+                    </div>
+                  </div>
+
+                  <!-- Actions -->
+                  <div class="mt-4" style="display: flex; gap: 0.8rem; align-items: center;">
+                    <button type="submit" class="btn btn-primary" id="btn-save-retention">Save Retention Policies</button>
+                    <button type="button" class="btn btn-secondary" id="btn-manual-purge" onclick="triggerManualPurge()">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:-2px;margin-right:4px;">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
+                      Purge Expired Now
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- Hardware & Resource Diagnostics (HG680-P) Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3>⚡ STB Hardware &amp; Memory Diagnostics</h3>
+              </div>
+              <div class="card-body">
+                <div class="telemetry-grid">
+                  <div class="telemetry-card">
+                    <span class="telemetry-card-title">Process RSS Memory</span>
+                    <span class="telemetry-card-val" id="diag-rss">0 MB</span>
+                    <span class="telemetry-card-sub" id="diag-heap">Heap: 0 MB</span>
+                  </div>
+                  <div class="telemetry-card">
+                    <span class="telemetry-card-title">System Total RAM</span>
+                    <span class="telemetry-card-val" id="diag-sys-ram">0 / 0 MB</span>
+                    <span class="telemetry-card-sub" id="diag-free-ram">Free: 0 MB</span>
+                  </div>
+                  <div class="telemetry-card">
+                    <span class="telemetry-card-title">CPU Utilization</span>
+                    <span class="telemetry-card-val" id="diag-cpu">0%</span>
+                    <span class="telemetry-card-sub" id="diag-cores">4 Cores (ARM64)</span>
+                  </div>
+                  <div class="telemetry-card">
+                    <span class="telemetry-card-title">System Uptime</span>
+                    <span class="telemetry-card-val" id="diag-uptime">0s</span>
+                    <span class="telemetry-card-sub">Node v22 LTS</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD / EDIT CAMERA -->
+  <div id="modal-camera" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-camera-title">Ingest IP Camera</h3>
+        <button class="btn-close" onclick="closeCameraModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-camera" onsubmit="handleCameraSubmit(event)">
+          <input type="hidden" id="camera-form-id">
+          <div class="form-group">
+            <label for="cam-name">Camera Name / Label</label>
+            <input type="text" id="cam-name" class="form-input" required placeholder="Front Gate CCTV">
+          </div>
+          <div class="form-group mt-3">
+            <label for="cam-rtsp">RTSP Stream URL</label>
+            <input type="text" id="cam-rtsp" class="form-input" required placeholder="rtsp://admin:pass@192.168.1.100:554/live/ch0">
+            <span class="form-hint">Tip: Supports V380 Pro, Dahua, Hikvision, XM, or any standard ONVIF RTSP feed.</span>
+          </div>
+          <div class="form-group-checkbox mt-3">
+            <label class="switch-label">
+              <input type="checkbox" id="cam-enabled" checked>
+              <span>Enable Stream Ingestion</span>
+            </label>
+          </div>
+          <div class="form-group-checkbox mt-2">
+            <label class="switch-label">
+              <input type="checkbox" id="cam-ai-enabled">
+              <span>Enable Dynamic Two-Stage AI Analytics</span>
+            </label>
+          </div>
+          <div class="modal-actions mt-4">
+            <button type="button" class="btn btn-secondary" onclick="closeCameraModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-camera">Save &amp; Start Ingest</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ROI MASK EDITOR -->
+  <div id="modal-roi" class="modal-backdrop hidden">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <h3>ROI Detection Zone Editor: <span id="roi-modal-cam-name"></span></h3>
+        <button class="btn-close" onclick="closeRoiModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted mb-2">Click on the canvas to add polygon vertices. Connect back to the first point to close the polygon zone. AI motion detection will be constrained strictly inside active zones.</p>
+        <div class="roi-canvas-wrapper">
+          <canvas id="roi-canvas" width="640" height="360"></canvas>
+        </div>
+        <div class="roi-controls mt-3">
+          <button class="btn btn-secondary" onclick="clearRoiPolygons()">Clear Zone</button>
+          <button class="btn btn-primary" onclick="saveRoiConfig()">Save Detection Zone</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EVENT DETAIL LIGHTBOX -->
+  <div id="modal-event-detail" class="modal-backdrop hidden">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <h3 id="event-detail-title">AI Detection Inspection</h3>
+          <span class="text-muted" id="event-detail-subtitle"></span>
+        </div>
+        <button class="btn-close" onclick="closeEventDetailModal()">×</button>
+      </div>
+      <div class="modal-body p-0">
+        <div class="event-lightbox-image-wrap">
+          <img id="event-detail-image" src="" alt="Snapshot" class="event-lightbox-img">
+          <div class="event-lightbox-overlay" id="event-detail-overlay"></div>
+        </div>
+        <div class="event-detail-meta-grid">
+          <div class="detail-meta-item">
+            <span class="meta-label">Camera</span>
+            <span class="meta-val" id="event-detail-cam">-</span>
+          </div>
+          <div class="detail-meta-item">
+            <span class="meta-label">Detected Target</span>
+            <span class="meta-val" id="event-detail-label">-</span>
+          </div>
+          <div class="detail-meta-item">
+            <span class="meta-label">Model Confidence</span>
+            <span class="meta-val" id="event-detail-conf">-</span>
+          </div>
+          <div class="detail-meta-item">
+            <span class="meta-label">Exact Timestamp</span>
+            <span class="meta-val" id="event-detail-time">-</span>
+          </div>
+        </div>
+        <div class="event-detail-actions p-3">
+          <a id="event-detail-download-btn" href="#" download class="btn btn-secondary">⬇ Download Snapshot</a>
+          <button id="event-detail-playback-btn" class="btn btn-primary" onclick="jumpToEventPlayback()">▶ Jump to Video Playback</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="/js/api.js"></script>
+  <script src="/js/player.js"></script>
+  <script src="/js/roi.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
