@@ -1,183 +1,256 @@
 # 🛡️ NYX NVR (Antigravity Network Video Recorder)
 
-> **Next-Generation Edge CCTV & AI Surveillance Platform**  
-> *Engineered for ultra-low latency, single-ingestion camera streams, zero-config UX, and resource-constrained edge hardware (ARM64 STB HG680-P 2GB RAM, Raspberry Pi, Mini PC, Windows & Linux Servers).*
+<div align="center">
+
+![NYX NVR Logo](https://img.shields.io/badge/NYX-NVR%20v1.1.0-FF8C00?style=for-the-badge&logo=shield&logoColor=black)
+[![Node.js Version](https://img.shields.io/badge/Node.js-v18%20|%20v20%20|%20v22-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Fastify](https://img.shields.io/badge/Fastify-v5.2-000000?style=for-the-badge&logo=fastify&logoColor=white)](https://fastify.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-v5.7-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![YOLOv8 ONNX](https://img.shields.io/badge/AI%20Inference-YOLOv8n%20ONNX-orange?style=for-the-badge&logo=onnx&logoColor=white)](https://onnxruntime.ai)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20|%20Armbian%20|%20Linux%20|%20Raspberry%20Pi-black?style=for-the-badge)](https://github.com/jnckcode/NYXNVR)
+
+**Next-Generation Edge CCTV & AI Surveillance Platform**  
+*Platform perekam video CCTV pintar, super ringan, hemat daya, dan bebas biaya lisensi bulanan. Dirancang khusus untuk berjalan mulus di komputer Windows harian maupun perangkat edge murah seperti STB Android TV bekas (HG680-P / B860H RAM 2GB) bertenaga Armbian Linux.*
+
+[Fitur Utama](#-fitur-utama) • [Dukungan Kamera CCTV](#-dukungan-perangkat-cctv--panduan-rtsp) • [Instalasi Windows](#-panduan-instalasi-windows-pemula-friendly) • [Instalasi Armbian / STB](#-panduan-instalasi-armbian--stb-hg680-p--b860h-pemula-friendly) • [Service Otomatis](#-pengelolaan-background-service) • [API Docs](#-spesifikasi-rest-api--websocket)
+
+</div>
 
 ---
 
-## 📋 Table of Contents
-- [Architecture Overview](#-architecture-overview)
-- [Key Features](#-key-features)
-- [System Requirements](#-system-requirements)
-- [Quick Start](#-quick-start)
-- [Automated Installation](#-automated-installation)
-- [Background Service Management](#-background-service-management)
-- [Automatic Port Conflict Detection](#-automatic-port-conflict-detection)
-- [Storage & Auto-Delete Retention Engine](#-storage--auto-delete-retention-engine)
-- [REST API & WebSocket Specification](#-rest-api--websocket-specification)
-- [Uninstallation](#-uninstallation)
-- [License](#-license)
+## 📑 Daftar Isi
+1. [Arsitektur & Keunggulan](#-arsitektur--keunggulan)
+2. [Fitur Utama](#-fitur-utama)
+3. [Dukungan Perangkat CCTV & Panduan RTSP](#-dukungan-perangkat-cctv--panduan-rtsp)
+4. [Kebutuhan Sistem (Hardware & Software)](#-kebutuhan-sistem)
+5. [Panduan Instalasi Windows (Pemula-Friendly)](#-panduan-instalasi-windows-pemula-friendly)
+6. [Panduan Instalasi Armbian / STB HG680-P / B860H (Pemula-Friendly)](#-panduan-instalasi-armbian--stb-hg680-p--b860h-pemula-friendly)
+7. [Pengelolaan Background Service (Jalan Otomatis Saat Boot)](#-pengelolaan-background-service)
+8. [Fitur Cerdas: Deteksi Port Bentrok Otomatis](#-fitur-cerdas-deteksi-port-bentrok-otomatis)
+9. [Mesin Auto-Delete & Retensi Penyimpanan](#-mesin-auto-delete--retensi-penyimpanan)
+10. [Spesifikasi REST API & WebSocket](#-spesifikasi-rest-api--websocket)
+11. [Cara Uninstall & Pembersihan](#-cara-uninstall--pembersihan)
+12. [Pertanyaan Sering Diajukan (FAQ)](#-pertanyaan-sering-diajukan-faq)
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ Arsitektur & Keunggulan
 
-NYX NVR is built from the ground up to solve the high-CPU and high-RAM bottlenecks of traditional NVRs. By implementing **Single Ingestion**, every camera RTSP stream is ingested **only once** by FFmpeg and demuxed concurrently into three lightweight outputs:
+NVR tradisional sering membuat komputer atau STB hang karena mere-encode video berulang kali. **NYX NVR** menggunakan teknik **Single Ingestion**:
+
+Setiap kamera RTSP hanya disedot **1 kali** oleh FFmpeg ke dalam memori, lalu dipecah langsung menjadi 3 jalur tanpa re-encoding (Direct Stream Copy):
 
 ```mermaid
 flowchart TD
-    CAM["IP Camera (RTSP)"] -->|Single Ingestion| FFMPEG["FFmpeg Process"]
+    CAM["📹 IP Camera (V380 / Franwell / Tapo / Ezviz / ONVIF)"] -->|Single RTSP Stream| FFMPEG["⚙️ FFmpeg Ingestion Engine"]
     
-    FFMPEG -->|Pipe 1: fMP4 Frag| WS["WebSocket Server (/ws/live/:id)"]
-    FFMPEG -->|Pipe 2: MP4 Copy| DISK["Local Storage (/storage/recordings)"]
-    FFMPEG -->|Pipe 3: RGB 5fps| FILTER["Stage 1: MotionFilter (Pixel Diff)"]
+    FFMPEG -->|Jalur 1: fMP4 Fragments| WS["⚡ WebSocket Server (/ws/live/:id)"]
+    FFMPEG -->|Jalur 2: Stream Copy H.264| DISK["💾 Storage Lokal (/storage/recordings)"]
+    FFMPEG -->|Jalur 3: Sampling 5fps 160x120| FILTER["🔍 Stage 1: MotionFilter (Pixel Diff)"]
     
-    WS -->|MSE Chunk Streaming| BROWSER["Browser HTML5 MSE Player (<500ms)"]
+    WS -->|Low Latency <500ms| BROWSER["💻 Web Browser HTML5 MSE Player"]
     
-    FILTER -->|Motion Score > Threshold| AI["Stage 2: AI Analytics Worker (YOLOv8 ONNX)"]
-    FILTER -.->|No Motion (Quiet)| SKIP["Bypass AI Inference (0% CPU)"]
+    FILTER -->|Gerakan > Ambang Batas| AI["🧠 Stage 2: AI Worker Thread (YOLOv8n ONNX)"]
+    FILTER -.->|Kondisi Sunyi (Tanpa Gerakan)| IDLE["💤 Lewati AI (0% CPU Usage)"]
     
-    AI -->|Object Detected in ROI| EVT["Event Storage (SQLite WAL) & Snapshot"]
-    EVT -->|Notification| BROWSER
+    AI -->|Objek Terdeteksi di Zona ROI| EVT["🚨 Simpan Log SQLite WAL + Snapshot JPG"]
+    EVT -->|Kirim Notifikasi Real-time| BROWSER
     
-    RETENTION["RetentionWorker Engine"] -->|Hourly / On-Demand Purge| PURGE["Auto Delete Expired Recordings & Snapshots"]
+    RETENTION["⏱️ Retention Worker"] -->|Cek Retensi Jam/Hari| CLEANUP["🗑️ Auto-Delete Video & Snapshot Expired"]
 ```
 
 ---
 
-## ⚡ Key Features
+## ⚡ Fitur Utama
 
-- **🚀 Ultra-Low Latency HTML5 Player (<500ms):**
-  Uses fragmented MP4 (fMP4) piped over WebSockets directly into browser MediaSource Extensions (MSE). No WebRTC complexity (no STUN/TURN), no HLS latency chunks.
-- **🧠 Two-Stage AI Analytics Engine:**
-  - **Stage 1 (Pre-filter):** Fast native pixel-difference motion detection (160x120 grayscale) consumes virtually 0% CPU when scenes are static.
-  - **Stage 2 (Inference):** Spawns dedicated worker threads with ONNX Runtime running YOLOv8n only when motion is detected.
-  - **Custom Polygonal ROI Masks:** Set trigger zones directly in the UI to prevent false alarms from public roads or tree branches.
-  - **Hot-Reloadable Models:** Upload custom `.onnx` models from the dashboard without restarting the server.
-- **🔌 Automatic Port Conflict Discovery:**
-  If the default port `3000` is already in use by another application, NYX NVR automatically scans and binds to the next available port (`3001`, `3002`, etc.) without crashing.
-- **⏱️ Time-Based Auto-Delete & Retention Engine:**
-  - Configurable retention in **Hours** or **Days** (e.g. 6h, 12h, 24h, 3d, 7d, 14d, 30d, or custom).
-  - Optional auto-purge for expired AI detection event snapshots (`.jpg`) and database records.
-  - Emergency disk threshold guard (automatically clears oldest recordings if storage reaches 90%).
-  - On-demand manual purge action ("Purge Expired Now") via API & dashboard.
-- **🎨 Industrial Brutalist UX:**
-  Clean, high-contrast hazard-amber aesthetic optimized for security control rooms. Flexible 1x1, 2x2, 3x3, 4x4 camera grids with single-click fullscreen focus.
-- **📡 Auto Camera Discovery:**
-  Built-in ONVIF and SSDP probes automatically scan the local subnet to detect IP cameras with 1-click addition.
-- **🗄️ SQLite WAL High-Concurrency Storage:**
-  ACID-compliant SQLite with Write-Ahead Logging (WAL) ensures zero read/write blocking between video indexing and UI telemetry.
+- **🚀 HTML5 MSE Player Real-time (<500ms):** Nonton siaran langsung CCTV dari browser tanpa plugin, tanpa WebRTC yang rumit (tidak butuh STUN/TURN server), dan tanpa jeda HLS yang lambat.
+- **🧠 Deteksi AI Dua Tahap (Two-Stage AI):**
+  - **Tahap 1 (Motion Pre-filter):** Mendeteksi perubahan pixel dengan algoritma ringan. Jika ruangan sepi, AI tidak bekerja sehingga hemat daya dan hemat CPU.
+  - **Tahap 2 (YOLOv8 ONNX Worker):** AI hanya berjalan di worker thread terpisah saat ada gerakan nyata, mengenali manusia, mobil, motor, sepeda, anjing, kucing, dll.
+  - **ROI Polygon Mask:** Atur area deteksi langsung di layar (misal: hanya pantau pintu gerbang, abaikan jalan raya umum).
+- **🔌 Deteksi Port Bebas Otomatis (Auto-Port Detection):** Jika port `3000` sedang dipakai oleh aplikasi lain, NYX NVR otomatis mencari dan menggunakan port kosong berikutnya (`3001`, `3002`, dst.) tanpa error atau crash.
+- **⏱️ Auto-Delete Rekaman Berdasarkan Waktu:** 
+  - Tentukan lama penyimpanan dalam **Jam** atau **Hari** (misal: 6 jam, 24 jam, 3 hari, 7 hari, 14 hari, 30 hari).
+  - Opsi otomatis membersihkan file foto snapshot AI (`.jpg`) dan log riwayat lama.
+  - Tombol **"Purge Expired Now"** untuk menghapus rekaman basi secara instan.
+  - Proteksi darurat ambang disk (otomatis menghapus rekaman tertua jika disk mencapai 90%).
+- **🎨 Tampilan Industrial Brutalist:** Tema gelap bertema hazard amber yang elegan, hemat daya layar, responsif di HP/Tablet/Komputer, dengan grid fleksibel (1x1, 2x2, 3x3, 4x4) dan mode fokus.
+- **📡 Auto-Discovery Kamera:** Pindai jaringan Wi-Fi/LAN lokal otomatis untuk mendeteksi kamera ONVIF & SSDP dalam 1 klik.
 
 ---
 
-## 💻 System Requirements
+## 📹 Dukungan Perangkat CCTV & Panduan RTSP
 
-| Component | Minimum Specification | Recommended Specification |
+NYX NVR mendukung **SEMUA MERK KAMERA IP & CCTV** di pasaran yang memiliki fitur **RTSP** (*Real-Time Streaming Protocol*) atau **ONVIF** standar industri. 
+
+Berikut panduan format URL RTSP untuk merk-merk CCTV populer:
+
+### 📑 Cheat Sheet URL RTSP Kamera Populer
+
+| Merk CCTV | Format URL RTSP Standar | Catatan & Tips Konfigurasi |
 |---|---|---|
-| **Hardware** | ARM64 Quad-Core / x86_64 Dual-Core | ARM64 8-Core / Intel Celeron N5105 / Core i3 |
-| **RAM** | 2 GB (e.g., STB HG680-P) | 4 GB - 8 GB |
-| **Storage** | 16 GB eMMC / MicroSD | 128 GB+ NVMe SSD / SATA HDD |
-| **OS** | Windows 10/11, Ubuntu 20.04+, Debian/Armbian | Windows Server, Debian 12 / Armbian Bullseye |
-| **Node.js** | v18.0.0 or higher | v20.x or v22.x LTS |
-| **FFmpeg** | v4.4 or higher | v6.x or higher with hardware acceleration |
+| **V380 / V380 Pro** | `rtsp://admin:password@<IP_CCTV>:554/live/ch0` <br>atau port `8554` | Pada beberapa model V380, fitur RTSP harus diaktifkan melalui aplikasi V380 Pro di menu *Network Settings* atau menggunakan firmware RTSP. |
+| **Franwell / Bardi / Tuya / Smart Life** | `rtsp://admin:password@<IP_CCTV>:554/live/ch0` <br>atau `rtsp://<IP_CCTV>:8554/live/ch0` | Pada aplikasi Smart Life / Tuya, aktifkan fitur *PC View / ONVIF* pada pengaturan kamera untuk membuat username & password RTSP. |
+| **TP-Link Tapo** (C200, C310, TC70, dll.) | `rtsp://username:password@<IP_CCTV>:554/stream1` | Buat akun kamera di aplikasi Tapo: *Settings* -> *Advanced Settings* -> *Camera Account*. Gunakan `stream1` (HD) atau `stream2` (SD). |
+| **Ezviz & Hikvision** | `rtsp://admin:VERIFIKASI@<IP_CCTV>:554/H.264/ch1/main/av_stream` | Password bawaan Ezviz adalah **Kode Verifikasi 6 huruf kapital** yang tertera di stiker fisik bawah kamera. |
+| **Dahua & Imou** (Ranger, Cue, Bullet) | `rtsp://admin:SAFETY_CODE@<IP_CCTV>:554/cam/realmonitor?channel=1&subtype=0` | Password default Imou adalah **Safety Code** pada label stiker kamera. `subtype=0` untuk Main Stream, `subtype=1` untuk Sub Stream. |
+| **Xiaomi / Yi Home** | `rtsp://<IP_CCTV>:554/ch0_0.h264` | Memerlukan firmware modifikasi open-source (*Yi-Hack* / *Xiaomi-Hack*) agar port RTSP terbuka. |
+| **DVR / NVR Standalone** (Generic H.264) | `rtsp://admin:password@<IP_DVR>:554/h264/ch1/main/av_stream` | Ganti `ch1` sesuai nomor channel kamera yang ingin ditarik. |
+
+> 💡 **TIPS MENGETAHUI IP ADDRESS KAMERA CCTV ANDA:**
+> 1. Buka dashboard modem/router Wi-Fi Anda (biasanya `192.168.1.1` atau `192.168.0.1`), lalu cek menu **DHCP Client List**.
+> 2. Atau gunakan aplikasi HP gratis seperti **Fing** (Android/iOS) untuk memindai perangkat yang terhubung di jaringan Wi-Fi Anda.
+> 3. Coba tes URL RTSP terlebih dahulu di software **VLC Media Player** di komputer: Buka menu *Media* -> *Open Network Stream* -> Tempel URL RTSP Anda. Jika video tampil lancar di VLC, berarti URL tersebut 100% siap dipakai di NYX NVR!
 
 ---
 
-## 🚀 Quick Start
+## 💻 Kebutuhan Sistem
 
-### 1. Clone or Download Repository
-```bash
-cd /path/to/NYXNVR
-```
-
-### 2. Manual Development Run
-```bash
-# Install dependencies
-npm install
-
-# Compile TypeScript & Frontend assets
-npm run build
-
-# Start in development mode
-npm start
-```
-Open your browser and navigate to:
-```
-http://localhost:3000
-```
-*(If port 3000 is occupied, check console output for the automatically assigned port!)*
+| Komponen | Spesifikasi Minimum | Rekomendasi Ideal |
+|---|---|---|
+| **Hardware** | STB Android TV bekas (HG680-P / B860H) / Raspberry Pi 3/4 | Komputer Mini PC Intel Celeron N5105 / Core i3 / Raspberry Pi 5 |
+| **RAM** | **2 GB RAM** | 4 GB s/d 8 GB RAM |
+| **Penyimpanan** | MicroSD / Flashdisk 16 GB | SSD SATA / NVMe 120GB+ atau Harddisk Eksternal USB |
+| **Sistem Operasi** | Windows 10/11 (64-bit), Armbian Linux, Ubuntu 20.04+, Debian | Windows Server, Armbian Bullseye/Bookworm, Debian 12 |
+| **Node.js** | v18.x s/d v22.x LTS | v20.x LTS |
+| **FFmpeg** | v4.4 atau yang lebih baru | v6.x dengan hardware acceleration |
 
 ---
 
-## 🛠️ Automated Installation
+## 🪟 Panduan Instalasi Windows (Pemula-Friendly)
 
-NYX NVR comes equipped with automated one-click installer scripts for both Windows and Linux environments.
+Panduan mudah langkah demi langkah untuk pengguna Windows tanpa perlu pusing dengan baris perintah yang rumit:
 
-### 🪟 Windows Installation
-Double-click `install.bat` or run via Command Prompt / PowerShell:
-```cmd
-install.bat
-```
-**What the installer does:**
-1. Checks Node.js & FFmpeg presence in system `PATH`.
-2. Creates storage directories (`storage/recordings`, `storage/snapshots`, `models`, `data`, `logs`).
-3. Runs `npm install` and compiles the TypeScript project (`npm run build`).
-4. Prompts to install and start NYX NVR as an automatic **Windows Background Service** (starts on boot).
+### Langkah 1: Pasang Node.js
+1. Kunjungi situs resmi: **[https://nodejs.org/](https://nodejs.org/)**
+2. Unduh versi **LTS (Long Term Support)** yang direkomendasikan.
+3. Buka file instalasi `.msi`, klik **Next**, centang persetujuan lisensi, dan pastikan opsi **"Add to PATH"** tercentang.
+4. Klik **Finish**.
+
+### Langkah 2: Pasang FFmpeg
+1. Unduh FFmpeg siap pakai dari: **[https://gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip](https://gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip)**
+2. Ekstrak file zip tersebut, lalu ubah nama foldernya menjadi `ffmpeg` dan pindahkan ke drive `C:\` sehingga lokasinya menjadi `C:\ffmpeg`.
+3. Buka menu pencarian Windows, ketik **Edit environment variables for your account**, lalu tekan Enter.
+4. Pada bagian *User variables*, pilih **Path**, klik **Edit** -> klik **New** -> ketikkan `C:\ffmpeg\bin` -> klik **OK**.
+5. *Tes apakah sukses:* Buka Command Prompt (CMD), ketik `ffmpeg -version`. Jika muncul informasi FFmpeg, berarti instalasi sukses!
+
+### Langkah 3: Eksekusi Installer Otomatis
+1. Masuk ke folder project `NYXNVR`.
+2. Klik ganda (double-click) file **`install.bat`**.
+3. Installer akan secara otomatis:
+   - Mengecek ketersediaan Node.js dan FFmpeg.
+   - Membuat seluruh folder penyimpanan (`storage`, `models`, `data`, `logs`).
+   - Mengunduh dependensi dan meng-compile aplikasi.
+   - Menanyakan apakah Anda ingin mendaftarkannya sebagai **Windows Background Service** (pilih `Y`).
+4. Selesai! Buka browser Anda dan kunjungi:
+   ```text
+   http://localhost:3000
+   ```
+   *(Jika port 3000 sedang terpakai aplikasi lain, perhatikan layar terminal karena sistem otomatis memakai port seperti `http://localhost:3001`)*.
 
 ---
 
-### 🐧 Linux / ARM64 STB Installation
-Run the installer shell script:
+## 🍓 Panduan Instalasi Armbian / STB HG680-P / B860H (Pemula-Friendly)
+
+STB bekas IndiHome/FirstMedia seperti **Fiberhome HG680-P** atau **ZTE B860H** dengan harga Rp 100.000 – Rp 200.000 memiliki konsumsi daya listrik sangat rendah (hanya 4 s/d 7 Watt, hidup 24 jam nonstop hanya menghabiskan listrik sekitar Rp 5.000/bulan).
+
+### Langkah 1: Akses STB via SSH
+Colokkan kabel LAN ke STB Armbian Anda, lalu buka software **PuTTY** (Windows) atau Terminal (Mac/Linux), dan login:
 ```bash
-chmod +x install.sh
+ssh root@<IP_STB_ANDA>
+# Masukkan password root STB Anda
+```
+
+### Langkah 2: Install FFmpeg & Node.js
+Jalankan perintah berikut di terminal SSH:
+```bash
+# 1. Perbarui daftar paket linux
+sudo apt-get update && sudo apt-get upgrade -y
+
+# 2. Pasang FFmpeg, Git, dan Curl
+sudo apt-get install -y ffmpeg git curl build-essential
+
+# 3. Pasang Node.js v20 LTS resmi
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# 4. Verifikasi instalasi
+node -v
+ffmpeg -version | head -n 1
+```
+
+### Langkah 3: Optimasi Memori Swap (Penting untuk STB RAM 2GB)
+Agar STB dengan RAM 2GB tidak kehabisan memori (*Out Of Memory*) saat model AI dijalankan, buat swap file 2GB:
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+### Langkah 4: Unduh & Jalankan Installer Otomatis
+```bash
+# Pindah ke direktori home atau opt
+cd /opt
+
+# Copy atau clone repository project NYXNVR ke /opt/NYXNVR
+# Masuk ke folder
+cd /opt/NYXNVR
+
+# Berikan izin eksekusi script installer
+chmod +x install.sh uninstall.sh
+
+# Jalankan installer otomatis dengan izin root
 sudo ./install.sh
 ```
-**What the installer does:**
-1. Validates Node.js and FFmpeg installations.
-2. Creates required storage folders.
-3. Installs NPM packages and builds production bundles.
-4. Generates and registers `/etc/systemd/system/nyxnvr.service`, enables it on boot, and starts it.
+
+Installer Linux akan secara otomatis:
+- Mengompilasi seluruh kode TypeScript.
+- Membangun service systemd di `/etc/systemd/system/nyxnvr.service`.
+- Menyalakan service dan mengaturnya agar **langsung otomatis hidup saat STB dinyalakan**.
+
+Buka browser dari laptop atau HP yang satu jaringan Wi-Fi dengan STB:
+```text
+http://<IP_STB_ANDA>:3000
+```
 
 ---
 
-## ⚙️ Background Service Management
+## ⚙️ Pengelolaan Background Service
 
-NYX NVR includes a cross-platform service manager that supervises the process, auto-restarts the server if an unexpected crash occurs, and logs all outputs to `logs/service.log`.
+NYX NVR dilengkapi dengan pengawas (*Supervisor Daemon*) yang memantau server di latar belakang. Jika server mati karena listrik padam atau terjadi error yang tidak terduga, supervisor akan **otomatis menyalakan kembali aplikasi**!
 
-### CLI Commands (npm scripts)
+### Perintah Cepat via Terminal / CMD:
 
-| Command | Action |
-|---|---|
-| `npm run service:install` | Registers NYX NVR as a persistent system background service |
-| `npm run service:start` | Starts the background daemon |
-| `npm run service:stop` | Gracefully stops the running background service |
-| `npm run service:status` | Displays service state (RUNNING / STOPPED), PID, and active port |
-| `npm run service:uninstall` | Unregisters and completely removes the service |
-
-### Manual Execution with Node.js
 ```bash
-# Check status
-node scripts/service-manager.js status
+# Cek status service (RUNNING / STOPPED, PID proses, Port aktif, lokasi log)
+npm run service:status
 
-# Start service
-node scripts/service-manager.js start
+# Menyalakan service di latar belakang
+npm run service:start
 
-# Stop service
-node scripts/service-manager.js stop
+# Mematikan service secara aman
+npm run service:stop
 
-# Install / Uninstall
-node scripts/service-manager.js install
-node scripts/service-manager.js uninstall
+# Mendaftarkan service ke sistem operasi
+npm run service:install
+
+# Menghapus service dari sistem operasi
+npm run service:uninstall
 ```
+
+### Lokasi File Log:
+Jika ingin melihat riwayat jalannya NVR di latar belakang, cukup periksa file log:
+- **Windows / Linux:** `NYXNVR/logs/service.log`
 
 ---
 
-## 🔍 Automatic Port Conflict Detection
+## 🔌 Fitur Cerdas: Deteksi Port Bentrok Otomatis
 
-If port `3000` is already taken by another development server, Nginx, Docker, or another application, NYX NVR does **not** crash with `EADDRINUSE`.
+Banyak software lain (seperti Node.js dev server, Docker, React, Next.js, Grafana, dll.) menggunakan port `3000`. Jika NYX NVR mendeteksi port `3000` telah terisi, fitur **PortFinder** akan langsung bekerja:
 
-Instead, the **PortFinder** engine intercepts the startup cycle:
-```
+```text
 [INFO] 4. Starting Fastify Web & WebSocket Server (desired port: 3000)...
 [WARN] [PortFinder] [PORT CONFLICT] Desired port 3000 is already occupied by another service.
 [INFO] [PortFinder] Automatically scanning for the next available port starting from 3001...
@@ -189,92 +262,78 @@ Instead, the **PortFinder** engine intercepts the startup cycle:
 ====================================================
 ```
 
-### Custom Port Specification
-To force a specific port, set the `PORT` environment variable:
-```bash
-# Windows PowerShell
-$env:PORT="8080"; npm start
-
-# Linux / macOS
-PORT=8080 npm start
-```
-The active port is always saved to `.runtime_port` for external monitoring scripts.
+Frontend web dashboard dan koneksi WebSocket player secara otomatis menyesuaikan diri dengan port aktif yang terpilih tanpa perlu setting ulang!
 
 ---
 
-## ⏱️ Storage & Auto-Delete Retention Engine
+## ⏱️ Mesin Auto-Delete & Retensi Penyimpanan
 
-The retention worker operates every 5 minutes and supports both time-based expiration and emergency disk conservation.
+Di tab menu **Storage & Retention** pada dashboard, Anda memiliki kendali penuh atas penggunaan harddisk/flashdisk Anda:
 
-### How It Works:
-1. **Time-Based Expiration:**
-   - Evaluates all indexed recordings against the cutoff: `now - retention_hours`.
-   - Safely removes the `.mp4` video files from the storage drive and deletes the SQLite index row.
-   - Cleans up any un-indexed orphan `.mp4` files older than the cutoff.
-2. **AI Snapshot Auto-Purge:**
-   - If enabled (`auto_delete_snapshots: 1`), detection event snapshots (`.jpg`) older than the retention cutoff are removed, freeing significant disk space.
-3. **Emergency Disk Guard:**
-   - If drive capacity exceeds `disk_threshold_percent` (default: 90%), the oldest recordings are continuously purged until capacity falls below the threshold.
-4. **Manual Purge Action:**
-   - Execute immediate purge from the dashboard UI or via `POST /api/v1/storage/purge`.
+1. **Preset Durasi Instan:** Klik tombol instan: `6 Jam`, `12 Jam`, `24 Jam`, `3 Hari`, `7 Hari`, `14 Hari`, `30 Hari`, atau masukkan angka bebas sesuai kapasitas harddisk Anda.
+2. **Auto-Delete Snapshot AI:** Centang opsi ini agar gambar foto snapshot hasil deteksi AI ikut dibersihkan saat usianya melampaui batas waktu retensi.
+3. **Pembersihan Manual Instan:** Klik tombol **"Purge Expired Now"** kapan saja untuk membersihkan file usang seketika.
+4. **Emergency Disk Guard (Batas Aman 90%):** Bila harddisk penuh melebihi 90% karena faktor lain, sistem retensi darurat otomatis menghapus rekaman video paling tua terlebih dahulu agar sistem CCTV tidak macet.
 
 ---
 
-## 📡 REST API & WebSocket Specification
+## 📡 Spesifikasi REST API & WebSocket
 
-### 📹 Camera Management
-- `GET /api/v1/cameras` — List all registered cameras.
-- `POST /api/v1/cameras` — Add a new camera (`name`, `rtsp_url`, `sub_stream_url`, `is_enabled`, `ai_enabled`).
-- `PUT /api/v1/cameras/:id` — Update camera parameters.
-- `DELETE /api/v1/cameras/:id` — Remove a camera and stop active ingestion.
-- `PATCH /api/v1/cameras/:id/ai` — Toggle AI object detection for a camera.
-- `PUT /api/v1/cameras/:id/roi` — Save normalized polygon points for AI region-of-interest mask.
+### 📹 Kamera
+- `GET /api/v1/cameras` — Daftar semua kamera terdaftar.
+- `POST /api/v1/cameras` — Tambah kamera baru (`name`, `rtsp_url`, `is_enabled`, `ai_enabled`).
+- `PUT /api/v1/cameras/:id` — Edit informasi kamera.
+- `DELETE /api/v1/cameras/:id` — Hapus kamera dan hentikan stream.
+- `PATCH /api/v1/cameras/:id/ai` — Saklar ON/OFF deteksi AI kamera.
+- `PUT /api/v1/cameras/:id/roi` — Simpan koordinat polygon zona deteksi ROI.
 
-### 🎥 Live Video & WebSocket
-- `GET /ws/live/:id` (WebSocket) — Connect to live camera feed. Receives binary fragmented MP4 chunks.
-- `GET /ws/events` (WebSocket) — Real-time stream of AI detection events and system alerts.
+### 🎥 Live Video & Realtime WebSocket
+- `ws://<HOST>:<PORT>/ws/live/:cameraId` — Stream video biner berkecepatan tinggi (fMP4 fragments) langsung ke MSE Video Tag.
+- `ws://<HOST>:<PORT>/ws/events` — Stream notifikasi event deteksi AI secara real-time.
 
-### 📼 Recordings & Playback
-- `GET /api/v1/recordings` — Query recordings with filters (`cameraId`, `date`, `limit`, `offset`).
-- `GET /api/v1/recordings/:id/stream` — Stream/download an MP4 segment.
+### 📼 Rekaman & Event AI
+- `GET /api/v1/recordings` — Query filter rekaman video (`cameraId`, `date`, `limit`, `offset`).
+- `GET /api/v1/recordings/:id/stream` — Download atau tonton rekaman video MP4.
+- `GET /api/v1/events` — Daftar riwayat log deteksi AI dengan pagination.
+- `GET /api/v1/events/:id/snapshot` — Ambil gambar foto snapshot kejadian.
 
-### 🚨 AI Events
-- `GET /api/v1/events` — Query AI events with pagination, label filter, and date filters.
-- `GET /api/v1/events/:id/snapshot` — View the high-resolution event snapshot.
-
-### 💾 Storage & Retention
-- `GET /api/v1/storage/retention-status` — Get retention policy, oldest recording, and last purge metrics.
-- `POST /api/v1/storage/purge` — Trigger immediate cleanup of expired recordings and snapshots.
-- `GET /api/v1/system/disk` — Disk space telemetry (total, free, used).
-
-### ⚙️ System Settings & AI Models
-- `GET /api/v1/settings` — Get current system settings map.
-- `PUT /api/v1/settings` — Update dynamic settings (retention hours, AI thresholds, target classes).
-- `POST /api/v1/models/upload` — Upload and hot-reload a custom `.onnx` YOLO model.
-- `GET /api/v1/system/metrics` — Real-time CPU, RAM, and active stream telemetry.
+### 💾 Penyimpanan & Sistem
+- `GET /api/v1/storage/retention-status` — Data status retensi, tanggal rekaman tertua, dan statistik ruang yang dibebaskan.
+- `POST /api/v1/storage/purge` — Trigger eksekusi pembersihan rekaman expired saat ini juga.
+- `GET /api/v1/system/disk` — Informasi kapasitas total, terpakai, dan sisa ruang disk.
+- `GET /api/v1/system/metrics` — Status real-time penggunaan CPU, RAM, dan stream aktif.
+- `POST /api/v1/models/upload` — Upload model ONNX kustom dengan fitur Hot-Reload tanpa restart server.
 
 ---
 
-## 🗑️ Uninstallation
+## 🗑️ Cara Uninstall & Pembersihan
 
-### 🪟 Windows
-Run `uninstall.bat`:
-```cmd
-uninstall.bat
-```
-The uninstaller will:
-1. Terminate running background daemon processes.
-2. Remove the Windows Startup / Task Scheduler service.
-3. Prompt whether you want to preserve or permanently delete stored recordings, snapshots, and databases.
+### Di Windows
+Cukup klik ganda file **`uninstall.bat`**:
+- Menghentikan proses background daemon yang aktif.
+- Menghapus service startup Windows.
+- Memberi Anda pilihan: Apakah file video rekaman dan database ingin tetap disimpan atau ikut dihapus bersih.
 
-### 🐧 Linux
-Run `uninstall.sh`:
+### Di Linux / Armbian STB
+Jalankan perintah:
 ```bash
 sudo ./uninstall.sh
 ```
-Stops and disables the `nyxnvr.service` systemd unit, removes the service file, and reloads systemd.
 
 ---
 
-## 📄 License
-MIT License © 2026 NYX NVR & Antigravity Engineering. Built with high performance, edge resilience, and privacy in mind.
+## ❓ Pertanyaan Sering Diajukan (FAQ)
+
+**T: Apakah kamera CCTV saya merk V380 Pro / Franwell / Bardi bisa digunakan di NYX NVR?**  
+J: **Bisa 100%!** Syaratnya hanya satu: kamera Anda dan server NVR (PC / STB) harus terhubung dalam satu jaringan Wi-Fi atau switch router yang sama. Cukup cari IP address kamera Anda dan gunakan format URL RTSP sesuai panduan [Dukungan Kamera CCTV](#-dukungan-perangkat-cctv--panduan-rtsp) di atas.
+
+**T: Mengapa di VLC bisa diputar, tapi di web player NVR sempat loading?**  
+J: Pastikan video codec kamera CCTV diatur ke format **H.264** (format paling kompatibel dengan seluruh web browser modern). Jika kamera diatur ke codec H.265 murni, beberapa browser lama membutuhkan transcode.
+
+**T: Bagaimana cara melihat CCTV ini dari HP di luar rumah (Internet)?**  
+J: Cara termudah dan paling aman tanpa perlu sewa IP Publik adalah menginstall **Tailscale** atau **ZeroTier** di PC/STB NVR Anda dan di HP Anda. Anda bisa langsung mengakses dashboard NVR dari mana saja secara gratis dan terenkripsi aman!
+
+---
+
+## 📄 Lisensi
+Didistribusikan di bawah lisensi **MIT License** © 2026 NYX NVR & Antigravity Engineering. Bebas digunakan untuk keperluan pribadi, rumah tangga, toko kelontong, kantor, hingga proyek komersial.
