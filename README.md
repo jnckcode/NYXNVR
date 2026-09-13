@@ -46,11 +46,11 @@ flowchart TD
     
     FFMPEG -->|"Jalur 1: fMP4 Fragments"| WS["⚡ WebSocket Server: /ws/live/:id"]
     FFMPEG -->|"Jalur 2: Stream Copy H.264"| DISK["💾 Storage Lokal: /storage/recordings"]
-    FFMPEG -->|"Jalur 3: Sampling 5fps 160x120"| FILTER["🔍 Stage 1: MotionFilter Pixel Diff"]
+    FFMPEG -->|"Jalur 3: Raw RGB 640x360 @ 2fps"| FILTER["🔍 Stage 1: MotionFilter Pixel Diff"]
     
     WS -->|"Low Latency di bawah 500ms"| BROWSER["💻 Web Browser HTML5 MSE Player"]
     
-    FILTER -->|"Ada Gerakan Nyata"| AI["🧠 Stage 2: AI Worker Thread YOLOv8n ONNX"]
+    FILTER -->|"Ada Gerakan Nyata"| AI["🧠 Stage 2: AI Worker Thread YOLOv8n ONNX 640x640"]
     FILTER -.->|"Kondisi Sunyi - Tanpa Gerakan"| IDLE["💤 Lewati AI - 0% Beban CPU"]
     
     AI -->|"Objek Terdeteksi di Zona ROI"| EVT["🚨 Simpan Log SQLite WAL + Snapshot JPG"]
@@ -64,9 +64,9 @@ flowchart TD
 ## ⚡ Fitur Utama
 
 - **🚀 HTML5 MSE Player Real-time (<500ms):** Nonton siaran langsung CCTV dari browser tanpa plugin, tanpa WebRTC yang rumit (tidak butuh STUN/TURN server), dan tanpa jeda HLS yang lambat.
-- **🧠 Deteksi AI Dua Tahap (Two-Stage AI):**
-  - **Tahap 1 (Motion Pre-filter):** Mendeteksi perubahan pixel dengan algoritma ringan. Jika ruangan sepi, AI tidak bekerja sehingga hemat daya dan hemat CPU.
-  - **Tahap 2 (YOLOv8 ONNX Worker):** AI hanya berjalan di worker thread terpisah saat ada gerakan nyata, mengenali manusia, mobil, motor, sepeda, anjing, kucing, dll.
+- **🧠 Deteksi AI Dua Tahap (Two-Stage AI 640x360 Widescreen):**
+  - **Tahap 1 (Motion Pre-filter 640x360):** Mendeteksi perubahan pixel pada frame raw RGB 640x360 (2 fps) dengan algoritma komputasi ringan berkecepatan tinggi. Jika kondisi ruangan sunyi, AI inference dilewati sehingga CPU tetap 0%.
+  - **Tahap 2 (YOLOv8n ONNX Worker 640x640):** Begitu ada gerakan, frame 640x360 resolusi tajam langsung dialirkan ke worker thread YOLOv8n ONNX tanpa perlu decode ulang, mendeteksi manusia, kendaraan, hewan, dll. dengan akurasi tinggi bahkan untuk objek yang jauh.
   - **ROI Polygon Mask:** Atur area deteksi langsung di layar (misal: hanya pantau pintu gerbang, abaikan jalan raya umum).
 - **🔌 Deteksi Port Bebas Otomatis (Auto-Port Detection):** Jika port `3000` sedang dipakai oleh aplikasi lain, NYX NVR otomatis mencari dan menggunakan port kosong berikutnya (`3001`, `3002`, dst.) tanpa error atau crash.
 - **⏱️ Auto-Delete Rekaman Berdasarkan Waktu:** 
