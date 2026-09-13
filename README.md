@@ -42,21 +42,21 @@ Setiap kamera RTSP hanya disedot **1 kali** oleh FFmpeg ke dalam memori, lalu di
 
 ```mermaid
 flowchart TD
-    CAM["📹 IP Camera (V380 / Franwell / Tapo / Ezviz / ONVIF)"] -->|Single RTSP Stream| FFMPEG["⚙️ FFmpeg Ingestion Engine"]
+    CAM["📹 IP Camera: V380 / Franwell / Tapo / Ezviz / ONVIF"] -->|"Single RTSP Stream"| FFMPEG["⚙️ FFmpeg Ingestion Engine"]
     
-    FFMPEG -->|Jalur 1: fMP4 Fragments| WS["⚡ WebSocket Server (/ws/live/:id)"]
-    FFMPEG -->|Jalur 2: Stream Copy H.264| DISK["💾 Storage Lokal (/storage/recordings)"]
-    FFMPEG -->|Jalur 3: Sampling 5fps 160x120| FILTER["🔍 Stage 1: MotionFilter (Pixel Diff)"]
+    FFMPEG -->|"Jalur 1: fMP4 Fragments"| WS["⚡ WebSocket Server: /ws/live/:id"]
+    FFMPEG -->|"Jalur 2: Stream Copy H.264"| DISK["💾 Storage Lokal: /storage/recordings"]
+    FFMPEG -->|"Jalur 3: Sampling 5fps 160x120"| FILTER["🔍 Stage 1: MotionFilter Pixel Diff"]
     
-    WS -->|Low Latency <500ms| BROWSER["💻 Web Browser HTML5 MSE Player"]
+    WS -->|"Low Latency di bawah 500ms"| BROWSER["💻 Web Browser HTML5 MSE Player"]
     
-    FILTER -->|Gerakan > Ambang Batas| AI["🧠 Stage 2: AI Worker Thread (YOLOv8n ONNX)"]
-    FILTER -.->|Kondisi Sunyi (Tanpa Gerakan)| IDLE["💤 Lewati AI (0% CPU Usage)"]
+    FILTER -->|"Ada Gerakan Nyata"| AI["🧠 Stage 2: AI Worker Thread YOLOv8n ONNX"]
+    FILTER -.->|"Kondisi Sunyi - Tanpa Gerakan"| IDLE["💤 Lewati AI - 0% Beban CPU"]
     
-    AI -->|Objek Terdeteksi di Zona ROI| EVT["🚨 Simpan Log SQLite WAL + Snapshot JPG"]
-    EVT -->|Kirim Notifikasi Real-time| BROWSER
+    AI -->|"Objek Terdeteksi di Zona ROI"| EVT["🚨 Simpan Log SQLite WAL + Snapshot JPG"]
+    EVT -->|"Kirim Notifikasi Real-time"| BROWSER
     
-    RETENTION["⏱️ Retention Worker"] -->|Cek Retensi Jam/Hari| CLEANUP["🗑️ Auto-Delete Video & Snapshot Expired"]
+    RETENTION["⏱️ Retention Worker"] -->|"Cek Retensi Jam atau Hari"| CLEANUP["🗑️ Auto-Delete Video & Snapshot Expired"]
 ```
 
 ---
