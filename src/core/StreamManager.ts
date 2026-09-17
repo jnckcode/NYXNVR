@@ -206,8 +206,7 @@ export class StreamManager extends EventEmitter {
     if (isRtsp) {
       inputArgs.push(
         '-rtsp_transport', 'tcp',
-        '-rtsp_flags', 'prefer_tcp',
-        '-timeout', '10000000',          // 10s TCP timeout (faster failure detection)
+        '-stimeout', '10000000',          // 10s TCP timeout (-stimeout in microseconds is universal for FFmpeg 4.x/5.x/6.x/7.x)
         '-fflags', '+genpts+discardcorrupt+nobuffer', // nobuffer for low-latency
         '-flags', 'low_delay',           // Minimize decode latency
         '-use_wallclock_as_timestamps', '1',
@@ -276,6 +275,10 @@ export class StreamManager extends EventEmitter {
       stream.status = 'connecting';
       stream.lastFrameTime = Date.now(); // Reset watchdog timer on spawn
       stream.currentSegmentStartTime = Date.now();
+
+      // Track recent stderr lines for diagnostic logging on failure
+      const stderrRingBuffer: string[] = [];
+      const MAX_STDERR_LINES = 20;
 
       // Handle Output 2: fMP4 Live Stream (stdout)
       if (proc.stdout) {
@@ -363,6 +366,13 @@ export class StreamManager extends EventEmitter {
         let lastSegmentFile: string | null = null;
         proc.stderr.on('data', (data: Buffer) => {
           const logMsg = data.toString();
+          const lines = logMsg.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+          for (const line of lines) {
+            stderrRingBuffer.push(line);
+            if (stderrRingBuffer.length > MAX_STDERR_LINES) {
+              stderrRingBuffer.shift();
+            }
+          }
 
           const match = logMsg.match(/Opening '([^']+)' for writing/);
           if (match && match[1]) {
@@ -378,14 +388,29 @@ export class StreamManager extends EventEmitter {
             stream.currentSegmentStartTime = Date.now();
           }
 
-          if (logMsg.includes('Error') || logMsg.includes('Invalid') || logMsg.includes('Failed') || logMsg.includes('Connection refused') || logMsg.includes('401 Unauthorized') || logMsg.includes('Unrecognized')) {
+          const lower = logMsg.toLowerCase();
+          if (
+            lower.includes('error') ||
+            lower.includes('invalid') ||
+            lower.includes('failed') ||
+            lower.includes('refused') ||
+            lower.includes('unauthorized') ||
+            lower.includes('unrecognized') ||
+            lower.includes('not found') ||
+            lower.includes('denied')
+          ) {
             logger.warn(`[FFmpeg:${camera.name}] ${logMsg.trim()}`);
           }
         });
       }
 
-      proc.on('close', (code: number) => {
-        logger.warn(`FFmpeg process for [${camera.name}] exited with code ${code}`);
+      proc.on('close', (code: number | null) => {
+        if (code !== 0 && code !== null) {
+          const details = stderrRingBuffer.slice(-5).join(' | ');
+          logger.warn(`FFmpeg process for [${camera.name}] exited with code ${code}${details ? ` -> ${details}` : ''}`);
+        } else {
+          logger.debug(`FFmpeg process for [${camera.name}] closed cleanly.`);
+        }
         this.handleStreamTermination(stream);
       });
 
