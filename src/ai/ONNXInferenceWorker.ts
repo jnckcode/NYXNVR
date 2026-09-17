@@ -7,6 +7,7 @@
 
 import { parentPort, isMainThread } from 'worker_threads';
 import fs from 'fs';
+import os from 'os';
 import jpeg from 'jpeg-js';
 import { COCO_CLASSES, TARGET_SECURITY_CLASSES } from '../config/constants';
 
@@ -53,19 +54,22 @@ async function loadModelSession(modelPath: string): Promise<boolean> {
   try {
     console.log(`[ONNXWorker] Loading YOLOv8 ONNX model from: ${modelPath}...`);
     
-    // CPU execution provider optimized for low-resource ARM64 (Strict 1-thread limit)
+    // CPU execution provider optimized for ARM64 multi-core (utilize NEON SIMD across 2-3 cores for ~2x faster inference)
+    const numCores = os.cpus().length || 4;
+    const optimalThreads = Math.min(3, Math.max(2, numCores - 1));
+
     session = await ort.InferenceSession.create(modelPath, {
       executionProviders: ['cpu'],
       graphOptimizationLevel: 'all',
       enableCpuMemArena: true,
       enableMemPattern: true,
-      intraOpNumThreads: 1,
+      intraOpNumThreads: optimalThreads,
       interOpNumThreads: 1,
       executionMode: 'sequential'
     });
 
     currentModelPath = modelPath;
-    console.log(`[ONNXWorker] Model session successfully loaded: ${modelPath}`);
+    console.log(`[ONNXWorker] Model session successfully loaded: ${modelPath} (Threads: ${optimalThreads})`);
     isSessionLoading = false;
     return true;
   } catch (err: any) {
