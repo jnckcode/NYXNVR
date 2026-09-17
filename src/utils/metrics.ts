@@ -5,6 +5,7 @@
  * @dependencies os, types/system
  */
 
+import fs from 'fs';
 import os from 'os';
 import { SystemMetrics, ProcessMemoryInfo } from '../types/system';
 
@@ -86,12 +87,29 @@ export function getProcessMemoryMb(): ProcessMemoryInfo {
 
 /**
  * Returns comprehensive hardware and system metrics.
+ * On Linux, utilizes /proc/meminfo MemAvailable so disk buffers/page cache are not miscounted as used RAM.
  */
 export function getSystemMetrics(activeStreamsCount: number = 0, activeAICount: number = 0): SystemMetrics {
   const cpus = os.cpus();
   const totalMemMb = Math.round(os.totalmem() / (1024 * 1024));
-  const freeMemMb = Math.round(os.freemem() / (1024 * 1024));
-  const usedMemMb = totalMemMb - freeMemMb;
+  let freeMemMb = Math.round(os.freemem() / (1024 * 1024));
+
+  // Linux kernel page-cache awareness:
+  // os.freemem() only returns raw MemFree (ignoring reclaimable disk page buffers).
+  // Reading MemAvailable from /proc/meminfo gives the true usable RAM.
+  if (os.platform() === 'linux') {
+    try {
+      const meminfo = fs.readFileSync('/proc/meminfo', 'utf-8');
+      const match = meminfo.match(/MemAvailable:\s+(\d+)\s+kB/);
+      if (match && match[1]) {
+        freeMemMb = Math.round(parseInt(match[1], 10) / 1024);
+      }
+    } catch {
+      // Fallback to os.freemem()
+    }
+  }
+
+  const usedMemMb = Math.max(0, totalMemMb - freeMemMb);
   const systemCpu = calculateCpuUsage();
   const processCpu = calculateProcessCpuUsage();
 

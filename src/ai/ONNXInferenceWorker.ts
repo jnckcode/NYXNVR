@@ -83,6 +83,11 @@ interface PreprocessedImage {
   nh: number;
 }
 
+// Pre-allocated reusable float array for YOLOv8 (1x3x640x640 = 1,228,800 floats = 4.9MB) to avoid GC thrashing
+const CACHED_TARGET_SIZE = 640;
+const CACHED_TOTAL_PIXELS = CACHED_TARGET_SIZE * CACHED_TARGET_SIZE;
+const cachedFloatData = new Float32Array(3 * CACHED_TOTAL_PIXELS);
+
 /**
  * Preprocesses RGB frame buffer with Letterboxing (preserves aspect ratio + 114 gray padding)
  * into normalized float32 tensor [1, 3, 640, 640].
@@ -102,7 +107,8 @@ function preprocessFrame(
   const totalPixels = targetSize * targetSize;
   const channelGOffset = totalPixels;
   const channelBOffset = totalPixels * 2;
-  const floatData = new Float32Array(3 * totalPixels).fill(114 / 255.0); // Standard YOLO 114 gray fill
+  const floatData = targetSize === CACHED_TARGET_SIZE ? cachedFloatData : new Float32Array(3 * totalPixels);
+  floatData.fill(114 / 255.0); // Reset padding with Standard YOLO 114 gray fill
 
   const isGrayscale = rawBuffer.length === origWidth * origHeight;
 

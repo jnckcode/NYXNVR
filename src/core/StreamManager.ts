@@ -335,7 +335,8 @@ export class StreamManager extends EventEmitter {
 
           while (stream.motionBuffer.length >= frameSize) {
             const frame = Buffer.from(stream.motionBuffer.subarray(0, frameSize)); // Copy to avoid subarray retention
-            stream.motionBuffer = stream.motionBuffer.subarray(frameSize);
+            const remaining = stream.motionBuffer.subarray(frameSize);
+            stream.motionBuffer = remaining.length > 0 ? Buffer.from(remaining) : Buffer.alloc(0);
 
             const motionRes = this.aiEngine.handleStage1Frame(stream.camera, frame, true);
 

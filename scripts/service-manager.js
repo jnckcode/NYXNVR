@@ -194,6 +194,7 @@ ExecStart=${nodeBin} ${runner}
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--max-old-space-size=256
 LimitNOFILE=65536
 
 [Install]

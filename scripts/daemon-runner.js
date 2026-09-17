@@ -41,7 +41,7 @@ function startChild() {
   log(`Spawning NYX NVR child process...`);
   const logStream = fs.createWriteStream(serviceLogPath, { flags: 'a' });
 
-  child = spawn(process.execPath, [entryPoint], {
+  child = spawn(process.execPath, ['--max-old-space-size=256', entryPoint], {
     cwd: projectRoot,
     env: { ...process.env, NODE_ENV: 'production' },
     stdio: ['ignore', 'pipe', 'pipe']

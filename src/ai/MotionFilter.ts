@@ -45,7 +45,10 @@ export class MotionFilter {
     this.detectHeight = SYSTEM_CONSTANTS.MOTION_DETECT_HEIGHT;
     this.thresholdPercent = thresholdPercent;
     this.pixelThreshold = pixelThreshold;
+    this.currentFrameBuffer = new Uint8Array(this.detectWidth * this.detectHeight);
   }
+
+  private currentFrameBuffer: Uint8Array;
 
   /**
    * Dynamically adjusts motion detection sensitivity.
@@ -129,12 +132,11 @@ export class MotionFilter {
    * Downscales a full-resolution RGB24 frame to detect-resolution grayscale using nearest-neighbor sampling.
    * This is the core optimization: 640×360 RGB → 160×120 grayscale = 12× fewer pixels to diff.
    */
-  private downscaleToGrayscale(rawBuffer: Buffer | Uint8Array, isRgb: boolean): Uint8Array {
+  private downscaleToGrayscale(rawBuffer: Buffer | Uint8Array, isRgb: boolean, dest: Uint8Array): void {
     const dw = this.detectWidth;
     const dh = this.detectHeight;
     const iw = this.inputWidth;
     const ih = this.inputHeight;
-    const result = new Uint8Array(dw * dh);
 
     // Calculate step ratios for nearest-neighbor downscale
     const xStep = iw / dw;
@@ -152,7 +154,7 @@ export class MotionFilter {
           const srcIdx = srcRow + srcX * 3;
 
           // Fast luminance: (R*77 + G*150 + B*29) >> 8
-          result[dstRow + dx] = (rawBuffer[srcIdx] * 77 + rawBuffer[srcIdx + 1] * 150 + rawBuffer[srcIdx + 2] * 29) >> 8;
+          dest[dstRow + dx] = (rawBuffer[srcIdx] * 77 + rawBuffer[srcIdx + 1] * 150 + rawBuffer[srcIdx + 2] * 29) >> 8;
         }
       }
     } else {
@@ -164,12 +166,10 @@ export class MotionFilter {
 
         for (let dx = 0; dx < dw; dx++) {
           const srcX = Math.min(iw - 1, (dx * xStep) | 0);
-          result[dstRow + dx] = rawBuffer[srcRow + srcX];
+          dest[dstRow + dx] = rawBuffer[srcRow + srcX];
         }
       }
     }
-
-    return result;
   }
 
   /**
@@ -178,12 +178,12 @@ export class MotionFilter {
    * Internal: Downscaled to 160×120 grayscale for ultra-fast differencing
    */
   public processFrame(rawBuffer: Buffer | Uint8Array, isRgb: boolean = false): { hasMotion: boolean; score: number } {
-    // Downscale input to detect resolution for fast pixel diffing
-    const currentGrayscale = this.downscaleToGrayscale(rawBuffer, isRgb);
     const totalPixels = this.detectWidth * this.detectHeight;
+    this.downscaleToGrayscale(rawBuffer, isRgb, this.currentFrameBuffer);
 
     if (!this.previousFrame) {
-      this.previousFrame = currentGrayscale;
+      this.previousFrame = new Uint8Array(totalPixels);
+      this.previousFrame.set(this.currentFrameBuffer);
       return { hasMotion: false, score: 0 };
     }
 
@@ -197,14 +197,14 @@ export class MotionFilter {
       }
 
       eligiblePixels++;
-      const diff = Math.abs(currentGrayscale[i] - this.previousFrame[i]);
+      const diff = Math.abs(this.currentFrameBuffer[i] - this.previousFrame[i]);
       if (diff >= this.pixelThreshold) {
         changedPixels++;
       }
     }
 
-    // Save current frame as reference
-    this.previousFrame = currentGrayscale;
+    // Copy current frame into reference buffer
+    this.previousFrame.set(this.currentFrameBuffer);
 
     const baseCount = eligiblePixels > 0 ? eligiblePixels : totalPixels;
     const score = (changedPixels / baseCount) * 100;
