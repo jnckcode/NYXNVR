@@ -331,7 +331,11 @@ export class StreamManager extends EventEmitter {
             stream.motionBuffer = Buffer.alloc(0);
           }
 
-          stream.motionBuffer = Buffer.concat([stream.motionBuffer, chunk]);
+          // Fast-forward to the freshest frame if buffer has queued up old frames
+          if (stream.motionBuffer.length > frameSize * 2) {
+            const skipFrames = Math.floor(stream.motionBuffer.length / frameSize) - 1;
+            stream.motionBuffer = stream.motionBuffer.subarray(skipFrames * frameSize);
+          }
 
           while (stream.motionBuffer.length >= frameSize) {
             const frame = Buffer.from(stream.motionBuffer.subarray(0, frameSize)); // Copy to avoid subarray retention
