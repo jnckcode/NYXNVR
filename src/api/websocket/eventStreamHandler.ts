@@ -21,10 +21,18 @@ export async function registerEventStreamWs(server: FastifyInstance): Promise<vo
   const streamManager = StreamManager.getInstance();
   const loadGovernor = LoadGovernor.getInstance();
 
-  // Listen to AI detections and broadcast to clients
+  // Listen to AI detection alerts (distinct security events) and broadcast to clients
   aiEngine.on('detectionEvent', (data: any) => {
     broadcast({
       type: 'DETECTION_EVENT',
+      ...data
+    });
+  });
+
+  // Listen to AI real-time bounding box overlay updates (live stream rendering)
+  aiEngine.on('detectionOverlay', (data: any) => {
+    broadcast({
+      type: 'DETECTION_OVERLAY',
       ...data
     });
   });

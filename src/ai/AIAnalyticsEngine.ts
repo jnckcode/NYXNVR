@@ -31,6 +31,8 @@ const logger = createLogger('AIAnalyticsEngine');
 
 /** Minimum interval between inferences for the SAME camera (ms) */
 const PER_CAMERA_THROTTLE_MS = 250;
+/** Minimum cooldown between database logging & alert notifications for the same camera + class (ms) */
+const ALERT_DEDUPLICATION_COOLDOWN_MS = 15000;
 
 export class AIAnalyticsEngine extends EventEmitter {
   private static instance: AIAnalyticsEngine;
@@ -45,6 +47,8 @@ export class AIAnalyticsEngine extends EventEmitter {
   private inferringCameras: Set<string> = new Set();
   private lastInferencePerCamera: Map<string, number> = new Map();
   private inferenceStartTimes: Map<string, number> = new Map();
+  /** Tracks last alert timestamp per camera + class to prevent toast / DB event spamming */
+  private lastAlertPerCameraClass: Map<string, number> = new Map();
 
   private constructor() {
     super();
@@ -120,7 +124,7 @@ export class AIAnalyticsEngine extends EventEmitter {
   }
 
   /**
-   * Processes Stage 2 inference results, saves snapshots, and writes SQLite event records.
+   * Processes Stage 2 inference results, saves snapshots, and writes SQLite event records with deduplication.
    */
   private handleInferenceResult(res: {
     cameraId: string;
@@ -140,14 +144,30 @@ export class AIAnalyticsEngine extends EventEmitter {
       this.loadGovernor.recordInferenceDuration(res.durationMs);
     }
 
+    // Always emit live overlay update to WebSocket (even if boxes is empty) so client canvas clears immediately
+    this.emit('detectionOverlay', {
+      cameraId: res.cameraId,
+      boxes: res.boxes || []
+    });
+
     if (!res.boxes || res.boxes.length === 0) {
       return;
     }
 
     const cam = CameraRepository.getById(res.cameraId);
     const camName = cam ? cam.name : res.cameraId;
+    const primaryDetection = res.boxes[0];
+    const alertKey = `${res.cameraId}_${primaryDetection.label.toLowerCase()}`;
+    const now = Date.now();
+    const lastAlert = this.lastAlertPerCameraClass.get(alertKey) || 0;
 
-    logger.info(`[AI] Cam: [${camName}] detected ${res.boxes.length} object(s) in ${res.durationMs}ms: ` +
+    // Smart Alert Deduplication: prevent spamming database records & toasts when the same object is visible
+    if (now - lastAlert < ALERT_DEDUPLICATION_COOLDOWN_MS) {
+      return;
+    }
+    this.lastAlertPerCameraClass.set(alertKey, now);
+
+    logger.info(`[AI Alert] Cam: [${camName}] detected ${res.boxes.length} object(s) in ${res.durationMs}ms: ` +
       res.boxes.map(b => `${b.label.toUpperCase()} (${Math.round(b.confidence * 100)}%)`).join(', ')
     );
 
@@ -170,7 +190,6 @@ export class AIAnalyticsEngine extends EventEmitter {
     }
 
     // Persist highest confidence detection to SQLite
-    const primaryDetection = res.boxes[0];
     const event = EventRepository.create({
       cameraId: res.cameraId,
       label: primaryDetection.label,
@@ -266,8 +285,8 @@ export class AIAnalyticsEngine extends EventEmitter {
   }
 
   /**
-   * Dispatches high-res frame to Stage 2 ONNX worker thread via zero-copy ArrayBuffer transfer.
-   * Uses per-camera locking — Camera A inferring does NOT block Camera B.
+   * Dispatches high-res frame to Stage 2 ONNX worker thread.
+   * Uses per-camera locking and safe message passing without ArrayBuffer detaching.
    */
   public dispatchStage2Inference(
     cameraId: string,
@@ -323,11 +342,7 @@ export class AIAnalyticsEngine extends EventEmitter {
       targetClasses
     };
 
-    // Zero-copy transfer of the raw frame ArrayBuffer to the worker thread
-    if (frameBuffer && frameBuffer.buffer) {
-      this.worker.postMessage(msg, [frameBuffer.buffer as any]);
-    } else {
-      this.worker.postMessage(msg);
-    }
+    // Safe message dispatch without ArrayBuffer transfer list to prevent multi-camera buffer detachment
+    this.worker.postMessage(msg);
   }
 }

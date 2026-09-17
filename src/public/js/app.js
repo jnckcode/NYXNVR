@@ -221,7 +221,9 @@ function initEventWebSocket() {
 let lastAiToastTime = 0;
 
 function handleServerEvent(msg) {
-  if (msg.type === 'DETECTION_EVENT') {
+  if (msg.type === 'DETECTION_OVERLAY') {
+    drawDetectionOverlay(msg.cameraId, msg.boxes);
+  } else if (msg.type === 'DETECTION_EVENT') {
     const camName = getCameraName(msg.cameraId);
     const now = Date.now();
     if (now - lastAiToastTime >= 3000) {
@@ -259,13 +261,21 @@ const overlayTimers = new Map();
 
 function drawDetectionOverlay(cameraId, boxes) {
   const canvas = document.getElementById(`overlay-canvas-${cameraId}`);
-  if (!canvas || !boxes || boxes.length === 0) return;
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
 
   // Clear previous frame
   ctx.clearRect(0, 0, w, h);
+
+  if (!boxes || boxes.length === 0) {
+    if (overlayTimers.has(cameraId)) {
+      clearTimeout(overlayTimers.get(cameraId));
+      overlayTimers.delete(cameraId);
+    }
+    return;
+  }
 
   for (const box of boxes) {
     // Auto-detect and support normalized coordinates (0.0 to 1.0)

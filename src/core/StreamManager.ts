@@ -340,17 +340,11 @@ export class StreamManager extends EventEmitter {
 
             const motionRes = this.aiEngine.handleStage1Frame(stream.camera, frame, true);
 
-            const now = Date.now();
-            const lastScan = stream.lastPeriodicAiScan || 0;
-            const heartbeatIntervalMs = this.loadGovernor.getHeartbeatIntervalMs();
-            const isPeriodicDue = (now - lastScan >= heartbeatIntervalMs);
             const inBurst = this.aiEngine.isCameraInBurstWindow(stream.camera.id);
             const isContinuous = this.settingsService.isContinuousAiEnabled();
 
-            if (stream.camera.ai_enabled === 1 && (motionRes.hasMotion || inBurst || isContinuous || isPeriodicDue)) {
-              if (motionRes.hasMotion || isPeriodicDue) {
-                stream.lastPeriodicAiScan = now;
-              }
+            // Stage 2 YOLO only runs on genuine motion, active burst window, or explicit continuous AI
+            if (stream.camera.ai_enabled === 1 && (motionRes.hasMotion || inBurst || isContinuous)) {
               this.aiEngine.dispatchStage2Inference(
                 stream.camera.id,
                 frame,

@@ -299,6 +299,112 @@ function calculateIoU(boxA: any, boxB: any): number {
   return unionArea > 0 ? interArea / unionArea : 0;
 }
 
+// Sequential inference queue to strictly prevent multi-camera tensor collisions and race conditions
+const inferQueue: WorkerMessage[] = [];
+let isProcessingQueue = false;
+
+async function processNextInQueue(): Promise<void> {
+  if (isProcessingQueue || inferQueue.length === 0) return;
+  isProcessingQueue = true;
+
+  const msg = inferQueue.shift()!;
+  try {
+    const start = Date.now();
+
+    if (!session || !ort || isSessionLoading) {
+      parentPort?.postMessage({
+        type: 'INFER_RESULT',
+        cameraId: msg.cameraId,
+        timestamp: msg.timestamp,
+        boxes: [],
+        durationMs: 0,
+        status: 'MODEL_NOT_READY'
+      });
+      isProcessingQueue = false;
+      setImmediate(processNextInQueue);
+      return;
+    }
+
+    if (!msg.frameBuffer || !msg.width || !msg.height) {
+      parentPort?.postMessage({
+        type: 'INFER_RESULT',
+        cameraId: msg.cameraId,
+        timestamp: msg.timestamp,
+        boxes: [],
+        durationMs: 0,
+        status: 'INVALID_INPUT'
+      });
+      isProcessingQueue = false;
+      setImmediate(processNextInQueue);
+      return;
+    }
+
+    const { tensor, padX, padY, nw, nh } = preprocessFrame(msg.frameBuffer, msg.width, msg.height, 640);
+    const feeds: Record<string, any> = {};
+    feeds[session.inputNames[0]] = tensor;
+
+    const results = await session.run(feeds);
+    const outputTensor = results[session.outputNames[0]];
+
+    const boxes = parseYOLOOutput(
+      outputTensor,
+      padX,
+      padY,
+      nw,
+      nh,
+      msg.confidenceThreshold ?? 0.25,
+      msg.iouThreshold ?? 0.45,
+      msg.targetClasses
+    );
+
+    const durationMs = Date.now() - start;
+
+    let jpegBuffer: Uint8Array | null = null;
+    if (boxes.length > 0 && msg.frameBuffer && msg.width && msg.height) {
+      try {
+        const rawRgb = msg.frameBuffer;
+        const w = msg.width;
+        const h = msg.height;
+        const rgba = Buffer.alloc(w * h * 4);
+        for (let i = 0, j = 0; i < rawRgb.length; i += 3, j += 4) {
+          rgba[j] = rawRgb[i];
+          rgba[j + 1] = rawRgb[i + 1];
+          rgba[j + 2] = rawRgb[i + 2];
+          rgba[j + 3] = 255;
+        }
+        jpegBuffer = jpeg.encode({ data: rgba, width: w, height: h }, 80).data;
+      } catch (e: any) {
+        console.warn('[ONNXWorker] JPEG snapshot encoding warning:', e.message);
+      }
+    }
+
+    parentPort?.postMessage({
+      type: 'INFER_RESULT',
+      cameraId: msg.cameraId,
+      timestamp: msg.timestamp,
+      boxes,
+      durationMs,
+      status: 'SUCCESS',
+      jpegBuffer
+    });
+  } catch (err: any) {
+    parentPort?.postMessage({
+      type: 'INFER_RESULT',
+      cameraId: msg.cameraId,
+      timestamp: msg.timestamp,
+      boxes: [],
+      durationMs: 0,
+      status: 'ERROR',
+      error: err.message
+    });
+  } finally {
+    isProcessingQueue = false;
+    if (inferQueue.length > 0) {
+      setImmediate(processNextInQueue);
+    }
+  }
+}
+
 // Worker message dispatcher
 if (!isMainThread && parentPort) {
   parentPort.on('message', async (msg: WorkerMessage) => {
@@ -313,86 +419,12 @@ if (!isMainThread && parentPort) {
           });
         }
       } else if (msg.type === 'INFER') {
-        const start = Date.now();
-
-        if (!session || !ort || isSessionLoading) {
-          parentPort?.postMessage({
-            type: 'INFER_RESULT',
-            cameraId: msg.cameraId,
-            timestamp: msg.timestamp,
-            boxes: [],
-            durationMs: 0,
-            status: 'MODEL_NOT_READY'
-          });
-          return;
+        // Prevent queue unbounded growth — cap queue to max 4 pending frames across all cameras
+        if (inferQueue.length >= 4) {
+          inferQueue.shift(); // Drop oldest stale frame
         }
-
-        if (!msg.frameBuffer || !msg.width || !msg.height) {
-          parentPort?.postMessage({
-            type: 'INFER_RESULT',
-            cameraId: msg.cameraId,
-            timestamp: msg.timestamp,
-            boxes: [],
-            durationMs: 0,
-            status: 'INVALID_INPUT'
-          });
-          return;
-        }
-
-        const { tensor, padX, padY, nw, nh } = preprocessFrame(msg.frameBuffer, msg.width, msg.height, 640);
-        const feeds: Record<string, any> = {};
-        feeds[session.inputNames[0]] = tensor;
-
-        const results = await session.run(feeds);
-        const outputTensor = results[session.outputNames[0]];
-
-        const boxes = parseYOLOOutput(
-          outputTensor,
-          padX,
-          padY,
-          nw,
-          nh,
-          msg.confidenceThreshold ?? 0.25,
-          msg.iouThreshold ?? 0.45,
-          msg.targetClasses
-        );
-
-        const durationMs = Date.now() - start;
-
-        let jpegBuffer: Uint8Array | null = null;
-        if (boxes.length > 0 && msg.frameBuffer && msg.width && msg.height) {
-          try {
-            const rawRgb = msg.frameBuffer;
-            const w = msg.width;
-            const h = msg.height;
-            const rgba = Buffer.alloc(w * h * 4);
-            for (let i = 0, j = 0; i < rawRgb.length; i += 3, j += 4) {
-              rgba[j] = rawRgb[i];
-              rgba[j + 1] = rawRgb[i + 1];
-              rgba[j + 2] = rawRgb[i + 2];
-              rgba[j + 3] = 255;
-            }
-            jpegBuffer = jpeg.encode({ data: rgba, width: w, height: h }, 80).data;
-          } catch (e: any) {
-            console.warn('[ONNXWorker] JPEG snapshot encoding warning:', e.message);
-          }
-        }
-
-        const responseMsg = {
-          type: 'INFER_RESULT',
-          cameraId: msg.cameraId,
-          timestamp: msg.timestamp,
-          boxes,
-          durationMs,
-          status: 'SUCCESS',
-          jpegBuffer
-        };
-
-        if (jpegBuffer && jpegBuffer.buffer) {
-          parentPort?.postMessage(responseMsg, [jpegBuffer.buffer as any]);
-        } else {
-          parentPort?.postMessage(responseMsg);
-        }
+        inferQueue.push(msg);
+        processNextInQueue();
       }
     } catch (err: any) {
       parentPort?.postMessage({
