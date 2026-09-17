@@ -218,23 +218,17 @@ function initEventWebSocket() {
   };
 }
 
-let lastAiToastTime = 0;
-
 function handleServerEvent(msg) {
-  if (msg.type === 'DETECTION_OVERLAY') {
-    drawDetectionOverlay(msg.cameraId, msg.boxes);
-  } else if (msg.type === 'DETECTION_EVENT') {
-    const camName = getCameraName(msg.cameraId);
-    const now = Date.now();
-    if (now - lastAiToastTime >= 3000) {
+  if (msg.type === 'DETECTION_EVENT' || msg.type === 'DETECTION_OVERLAY') {
+    drawDetectionOverlay(msg.cameraId, msg.boxes || []);
+    if (msg.event) {
+      const camName = getCameraName(msg.cameraId);
       showToast(`AI Alert: ${msg.event.label.toUpperCase()} (${Math.round(msg.event.confidence * 100)}%) on ${camName}`, 'info');
-      lastAiToastTime = now;
-    }
-    drawDetectionOverlay(msg.cameraId, msg.boxes);
-    if (state.activeTab === 'events') {
-      handleLiveEventArrival(msg.event);
-    } else {
-      updateNavEventBadge();
+      if (state.activeTab === 'events') {
+        handleLiveEventArrival(msg.event);
+      } else {
+        updateNavEventBadge();
+      }
     }
   } else if (msg.type === 'STREAM_STATUS_CHANGED') {
     updateCameraCardStatus(msg.cameraId, msg.status);

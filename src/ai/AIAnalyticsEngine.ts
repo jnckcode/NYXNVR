@@ -144,64 +144,56 @@ export class AIAnalyticsEngine extends EventEmitter {
       this.loadGovernor.recordInferenceDuration(res.durationMs);
     }
 
-    // Always emit live overlay update to WebSocket (even if boxes is empty) so client canvas clears immediately
-    this.emit('detectionOverlay', {
-      cameraId: res.cameraId,
-      boxes: res.boxes || []
-    });
+    const hasBoxes = res.boxes && res.boxes.length > 0;
+    let event: any = null;
 
-    if (!res.boxes || res.boxes.length === 0) {
-      return;
-    }
+    if (hasBoxes) {
+      const cam = CameraRepository.getById(res.cameraId);
+      const camName = cam ? cam.name : res.cameraId;
+      const primaryDetection = res.boxes[0];
+      const alertKey = `${res.cameraId}_${primaryDetection.label.toLowerCase()}`;
+      const now = Date.now();
+      const lastAlert = this.lastAlertPerCameraClass.get(alertKey) || 0;
 
-    const cam = CameraRepository.getById(res.cameraId);
-    const camName = cam ? cam.name : res.cameraId;
-    const primaryDetection = res.boxes[0];
-    const alertKey = `${res.cameraId}_${primaryDetection.label.toLowerCase()}`;
-    const now = Date.now();
-    const lastAlert = this.lastAlertPerCameraClass.get(alertKey) || 0;
+      // Deduplication: record to DB and trigger toast alert every 10 seconds per camera/class
+      if (now - lastAlert >= 10000) {
+        this.lastAlertPerCameraClass.set(alertKey, now);
 
-    // Smart Alert Deduplication: prevent spamming database records & toasts when the same object is visible
-    if (now - lastAlert < ALERT_DEDUPLICATION_COOLDOWN_MS) {
-      return;
-    }
-    this.lastAlertPerCameraClass.set(alertKey, now);
+        let snapshotRelPath = '';
+        if (res.jpegBuffer) {
+          try {
+            const snapDir = SYSTEM_CONSTANTS.DEFAULT_SNAPSHOT_PATH;
+            ensureDirExists(snapDir);
+            const fileName = `${res.cameraId}_${Date.now()}.jpg`;
+            const fullSnapPath = path.join(snapDir, fileName);
 
-    logger.info(`[AI Alert] Cam: [${camName}] detected ${res.boxes.length} object(s) in ${res.durationMs}ms: ` +
-      res.boxes.map(b => `${b.label.toUpperCase()} (${Math.round(b.confidence * 100)}%)`).join(', ')
-    );
+            fs.promises.writeFile(fullSnapPath, Buffer.from(res.jpegBuffer)).catch(err => {
+              logger.error('Failed to write event snapshot image:', err.message);
+            });
+            snapshotRelPath = fileName;
+          } catch (err: any) {
+            logger.error('Failed to prepare snapshot path:', err.message);
+          }
+        }
 
-    let snapshotRelPath = '';
-    if (res.jpegBuffer) {
-      try {
-        const snapDir = SYSTEM_CONSTANTS.DEFAULT_SNAPSHOT_PATH;
-        ensureDirExists(snapDir);
-        const fileName = `${res.cameraId}_${Date.now()}.jpg`;
-        const fullSnapPath = path.join(snapDir, fileName);
-
-        // Asynchronously write pre-encoded JPEG from worker without blocking main event loop
-        fs.promises.writeFile(fullSnapPath, Buffer.from(res.jpegBuffer)).catch(err => {
-          logger.error('Failed to write event snapshot image:', err.message);
+        event = EventRepository.create({
+          cameraId: res.cameraId,
+          label: primaryDetection.label,
+          confidence: primaryDetection.confidence,
+          snapshotPath: snapshotRelPath,
+          timestamp: res.timestamp
         });
-        snapshotRelPath = fileName;
-      } catch (err: any) {
-        logger.error('Failed to prepare snapshot path:', err.message);
+
+        logger.info(`[AI Alert] Cam: [${camName}] detected ${res.boxes.length} object(s) in ${res.durationMs}ms: ` +
+          res.boxes.map(b => `${b.label.toUpperCase()} (${Math.round(b.confidence * 100)}%)`).join(', ')
+        );
       }
     }
 
-    // Persist highest confidence detection to SQLite
-    const event = EventRepository.create({
-      cameraId: res.cameraId,
-      label: primaryDetection.label,
-      confidence: primaryDetection.confidence,
-      snapshotPath: snapshotRelPath,
-      timestamp: res.timestamp
-    });
-
-    // Broadcast detection event via EventEmitter for WebSockets
+    // Always broadcast detection event via EventEmitter for WebSocket clients (boxes live, event on alert)
     this.emit('detectionEvent', {
       event,
-      boxes: res.boxes,
+      boxes: res.boxes || [],
       cameraId: res.cameraId
     });
   }

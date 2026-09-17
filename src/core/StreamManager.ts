@@ -325,25 +325,19 @@ export class StreamManager extends EventEmitter {
         const frameSize = SYSTEM_CONSTANTS.STAGE1_FRAME_WIDTH * SYSTEM_CONSTANTS.STAGE1_FRAME_HEIGHT * 3;
 
         motionStream.on('data', (chunk: Buffer) => {
-          // Guard: cap motion buffer to prevent unbounded memory growth and preserve frame alignment
+          // Guard: cap motion buffer to prevent unbounded memory growth
           if (stream.motionBuffer.length + chunk.length > MAX_MOTION_BUFFER_BYTES) {
-            // Buffer overflow - discard and reset to empty to realign with fresh frame boundary
             stream.motionBuffer = Buffer.alloc(0);
           }
 
-          // Fast-forward to the freshest frame if buffer has queued up old frames
-          if (stream.motionBuffer.length > frameSize * 2) {
-            const skipFrames = Math.floor(stream.motionBuffer.length / frameSize) - 1;
-            stream.motionBuffer = stream.motionBuffer.subarray(skipFrames * frameSize);
-          }
+          stream.motionBuffer = Buffer.concat([stream.motionBuffer, chunk]);
 
           while (stream.motionBuffer.length >= frameSize) {
-            const frame = Buffer.from(stream.motionBuffer.subarray(0, frameSize)); // Copy to avoid subarray retention
+            const frame = Buffer.from(stream.motionBuffer.subarray(0, frameSize));
             const remaining = stream.motionBuffer.subarray(frameSize);
             stream.motionBuffer = remaining.length > 0 ? Buffer.from(remaining) : Buffer.alloc(0);
 
             const motionRes = this.aiEngine.handleStage1Frame(stream.camera, frame, true);
-
             const inBurst = this.aiEngine.isCameraInBurstWindow(stream.camera.id);
             const isContinuous = this.settingsService.isContinuousAiEnabled();
 
