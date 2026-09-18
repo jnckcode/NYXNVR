@@ -1874,6 +1874,27 @@ async function pollSystemMetrics() {
         sbRamBar.style.background = m.processMemory.rssMb > 350 ? 'var(--accent-danger)' : 'var(--accent-purple)';
       }
 
+      // Sidebar CPU Temperature Telemetry
+      const sbTempVal = document.getElementById('sb-temp-val');
+      if (sbTempVal) {
+        if (m.cpuTemp !== undefined) {
+          sbTempVal.textContent = `${m.cpuTemp}°C`;
+          if (m.cpuTemp >= 82) {
+            sbTempVal.style.color = 'var(--accent-danger, #ef4444)';
+            sbTempVal.textContent = `🔥 ${m.cpuTemp}°C (OVERHEAT)`;
+          } else if (m.cpuTemp >= 75) {
+            sbTempVal.style.color = 'var(--accent-warning, #f59e0b)';
+            sbTempVal.textContent = `⚠️ ${m.cpuTemp}°C`;
+          } else {
+            sbTempVal.style.color = '#10b981';
+            sbTempVal.textContent = `🟢 ${m.cpuTemp}°C`;
+          }
+        } else {
+          sbTempVal.textContent = '🟢 Normal';
+          sbTempVal.style.color = '#10b981';
+        }
+      }
+
       // Settings Diagnostics Card
       const diagRss = document.getElementById('diag-rss');
       if (diagRss) {

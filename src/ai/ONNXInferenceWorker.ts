@@ -15,6 +15,8 @@ let ort: any = null;
 let session: any = null;
 let currentModelPath: string | null = null;
 let isSessionLoading = false;
+let sessionInputWidth = 640;
+let sessionInputHeight = 640;
 
 try {
   ort = require('onnxruntime-node');
@@ -38,6 +40,7 @@ interface WorkerMessage {
 
 /**
  * Loads or hot-reloads the YOLOv8 ONNX model session.
+ * Enforces strict 1-thread allocation for STB HG680P (Cortex-A53) to eliminate CPU thermal runaway.
  */
 async function loadModelSession(modelPath: string): Promise<boolean> {
   if (!ort) {
@@ -54,22 +57,32 @@ async function loadModelSession(modelPath: string): Promise<boolean> {
   try {
     console.log(`[ONNXWorker] Loading YOLOv8 ONNX model from: ${modelPath}...`);
     
-    // CPU execution provider optimized for ARM64 multi-core (utilize NEON SIMD across 2-3 cores for ~2x faster inference)
-    const numCores = os.cpus().length || 4;
-    const optimalThreads = Math.min(3, Math.max(2, numCores - 1));
-
+    // Strict single-thread budget per session (Tips 2 & Tips 3) to prevent multi-camera thread contention and thermal shutdowns
     session = await ort.InferenceSession.create(modelPath, {
       executionProviders: ['cpu'],
       graphOptimizationLevel: 'all',
       enableCpuMemArena: true,
       enableMemPattern: true,
-      intraOpNumThreads: optimalThreads,
+      intraOpNumThreads: 1,
       interOpNumThreads: 1,
       executionMode: 'sequential'
     });
 
+    // Detect model input dimensions
+    sessionInputWidth = 640;
+    sessionInputHeight = 640;
+    
+    const lowerPath = modelPath.toLowerCase();
+    if (lowerPath.includes('416x256') || lowerPath.includes('416_256') || lowerPath.includes('416') || lowerPath.includes('256')) {
+      sessionInputWidth = 416;
+      sessionInputHeight = 256;
+    } else if (lowerPath.includes('320')) {
+      sessionInputWidth = 320;
+      sessionInputHeight = 320;
+    }
+
     currentModelPath = modelPath;
-    console.log(`[ONNXWorker] Model session successfully loaded: ${modelPath} (Threads: ${optimalThreads})`);
+    console.log(`[ONNXWorker] Model session successfully loaded: ${modelPath} (Resolution: ${sessionInputWidth}x${sessionInputHeight}, Threads: 1)`);
     isSessionLoading = false;
     return true;
   } catch (err: any) {
@@ -87,31 +100,41 @@ interface PreprocessedImage {
   nh: number;
 }
 
-// Pre-allocated reusable float array for YOLOv8 (1x3x640x640 = 1,228,800 floats = 4.9MB) to avoid GC thrashing
-const CACHED_TARGET_SIZE = 640;
-const CACHED_TOTAL_PIXELS = CACHED_TARGET_SIZE * CACHED_TARGET_SIZE;
-const cachedFloatData = new Float32Array(3 * CACHED_TOTAL_PIXELS);
+// Pre-allocated reusable float arrays indexed by "WxH" to avoid Garbage Collection churn on 2GB RAM STB
+const cachedFloatMap: Map<string, Float32Array> = new Map();
+
+function getCachedFloatBuffer(targetW: number, targetH: number): Float32Array {
+  const key = `${targetW}x${targetH}`;
+  let buf = cachedFloatMap.get(key);
+  const requiredLen = 3 * targetW * targetH;
+  if (!buf || buf.length !== requiredLen) {
+    buf = new Float32Array(requiredLen);
+    cachedFloatMap.set(key, buf);
+  }
+  return buf;
+}
 
 /**
  * Preprocesses RGB frame buffer with Letterboxing (preserves aspect ratio + 114 gray padding)
- * into normalized float32 tensor [1, 3, 640, 640].
+ * into normalized float32 tensor [1, 3, targetH, targetW].
  */
 function preprocessFrame(
   rawBuffer: Buffer | Uint8Array,
   origWidth: number,
   origHeight: number,
-  targetSize: number = 640
+  targetW: number = 640,
+  targetH: number = 640
 ): PreprocessedImage {
-  const scale = Math.min(targetSize / origWidth, targetSize / origHeight);
+  const scale = Math.min(targetW / origWidth, targetH / origHeight);
   const nw = Math.round(origWidth * scale);
   const nh = Math.round(origHeight * scale);
-  const padX = Math.floor((targetSize - nw) / 2);
-  const padY = Math.floor((targetSize - nh) / 2);
+  const padX = Math.floor((targetW - nw) / 2);
+  const padY = Math.floor((targetH - nh) / 2);
 
-  const totalPixels = targetSize * targetSize;
+  const totalPixels = targetW * targetH;
   const channelGOffset = totalPixels;
   const channelBOffset = totalPixels * 2;
-  const floatData = targetSize === CACHED_TARGET_SIZE ? cachedFloatData : new Float32Array(3 * totalPixels);
+  const floatData = getCachedFloatBuffer(targetW, targetH);
   floatData.fill(114 / 255.0); // Reset padding with Standard YOLO 114 gray fill
 
   const isGrayscale = rawBuffer.length === origWidth * origHeight;
@@ -121,7 +144,7 @@ function preprocessFrame(
     for (let y = 0; y < nh; y++) {
       const srcY = Math.min(origHeight - 1, Math.floor(y / scale));
       const srcRowOffset = srcY * origWidth;
-      const destRowOffset = (y + padY) * targetSize + padX;
+      const destRowOffset = (y + padY) * targetW + padX;
 
       for (let x = 0; x < nw; x++) {
         const srcX = Math.min(origWidth - 1, Math.floor(x / scale));
@@ -138,7 +161,7 @@ function preprocessFrame(
     for (let y = 0; y < nh; y++) {
       const srcY = Math.min(origHeight - 1, Math.floor(y / scale));
       const srcRowOffset = srcY * origWidth * 3;
-      const destRowOffset = (y + padY) * targetSize + padX;
+      const destRowOffset = (y + padY) * targetW + padX;
 
       for (let x = 0; x < nw; x++) {
         const srcX = Math.min(origWidth - 1, Math.floor(x / scale));
@@ -152,7 +175,7 @@ function preprocessFrame(
     }
   }
 
-  const tensor = new ort.Tensor('float32', floatData, [1, 3, targetSize, targetSize]);
+  const tensor = new ort.Tensor('float32', floatData, [1, 3, targetH, targetW]);
   return { tensor, padX, padY, nw, nh };
 }
 
@@ -343,7 +366,13 @@ async function processNextInQueue(): Promise<void> {
       return;
     }
 
-    const { tensor, padX, padY, nw, nh } = preprocessFrame(msg.frameBuffer, msg.width, msg.height, 640);
+    const { tensor, padX, padY, nw, nh } = preprocessFrame(
+      msg.frameBuffer,
+      msg.width,
+      msg.height,
+      sessionInputWidth,
+      sessionInputHeight
+    );
     const feeds: Record<string, any> = {};
     feeds[session.inputNames[0]] = tensor;
 

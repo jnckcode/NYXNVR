@@ -288,6 +288,11 @@ export class AIAnalyticsEngine extends EventEmitter {
   ): void {
     const now = Date.now();
 
+    // Thermal safety gate: if STB CPU is overheating (>82°C), temporarily drop inference to prevent shutdown
+    if (this.loadGovernor.isEmergencyCoolingActive()) {
+      return;
+    }
+
     // Per-camera gate: skip if this specific camera is already inferring
     if (this.inferringCameras.has(cameraId)) {
       const startTime = this.inferenceStartTimes.get(cameraId) || 0;

@@ -9,6 +9,8 @@
     "prod": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "ts-node src/test.ts",
+    "bench:stb": "ts-node scripts/simulate-stb.ts",
+    "quantize": "python scripts/quantize.py",
     "service:install": "node scripts/service-manager.js install",
     "service:uninstall": "node scripts/service-manager.js uninstall",
     "service:start": "node scripts/service-manager.js start",

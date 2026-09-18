@@ -27,4 +27,6 @@ export interface SystemMetrics {
   processMemory: ProcessMemoryInfo;
   activeStreamsCount: number;
   activeAICount: number;
+  cpuTemp?: number;
+  isThermalThrottled?: boolean;
 }

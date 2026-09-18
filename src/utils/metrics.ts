@@ -86,6 +86,37 @@ export function getProcessMemoryMb(): ProcessMemoryInfo {
 }
 
 /**
+ * Reads CPU temperature on Linux/Armbian SBCs (/sys/class/thermal/thermal_zone0/temp).
+ * Returns temperature in Celsius (e.g., 55.4) or undefined if not available.
+ */
+export function getCpuTemperature(): number | undefined {
+  if (os.platform() === 'linux') {
+    const thermalPaths = [
+      '/sys/class/thermal/thermal_zone0/temp',
+      '/sys/class/thermal/thermal_zone1/temp',
+      '/sys/devices/virtual/thermal/thermal_zone0/temp'
+    ];
+
+    for (const tPath of thermalPaths) {
+      try {
+        if (fs.existsSync(tPath)) {
+          const raw = fs.readFileSync(tPath, 'utf-8').trim();
+          const val = parseFloat(raw);
+          if (!isNaN(val) && val > 0) {
+            // Kernel thermal reports in millidegrees Celsius (e.g., 55000 = 55.0°C)
+            const tempC = val > 1000 ? val / 1000 : val;
+            return Math.round(tempC * 10) / 10;
+          }
+        }
+      } catch {
+        // Continue to next path
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * Returns comprehensive hardware and system metrics.
  * On Linux, utilizes /proc/meminfo MemAvailable so disk buffers/page cache are not miscounted as used RAM.
  */
@@ -112,6 +143,7 @@ export function getSystemMetrics(activeStreamsCount: number = 0, activeAICount: 
   const usedMemMb = Math.max(0, totalMemMb - freeMemMb);
   const systemCpu = calculateCpuUsage();
   const processCpu = calculateProcessCpuUsage();
+  const cpuTemp = getCpuTemperature();
 
   return {
     uptimeSeconds: Math.round(process.uptime()),
@@ -127,6 +159,8 @@ export function getSystemMetrics(activeStreamsCount: number = 0, activeAICount: 
     usedMemMb,
     processMemory: getProcessMemoryMb(),
     activeStreamsCount,
-    activeAICount
+    activeAICount,
+    cpuTemp,
+    isThermalThrottled: cpuTemp !== undefined && cpuTemp >= 75
   };
 }

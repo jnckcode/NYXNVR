@@ -15,10 +15,12 @@
 
 import EventEmitter from 'events';
 import { createLogger } from '../utils/logger';
+import { getCpuTemperature } from '../utils/metrics';
+import { SYSTEM_CONSTANTS } from '../config/constants';
 
 const logger = createLogger('LoadGovernor');
 
-export type GovernorTier = 'PERFORMANCE' | 'BALANCED' | 'ECO';
+export type GovernorTier = 'PERFORMANCE' | 'BALANCED' | 'ECO' | 'EMERGENCY_COOLING';
 
 export interface GovernorMetrics {
   tier: GovernorTier;
@@ -29,6 +31,8 @@ export interface GovernorMetrics {
   heartbeatIntervalMs: number;
   burstCooldownMs: number;
   memoryRssMb: number;
+  cpuTemp?: number;
+  isEmergencyCooling: boolean;
 }
 
 export class LoadGovernor extends EventEmitter {
@@ -38,9 +42,15 @@ export class LoadGovernor extends EventEmitter {
   private maxHistoryLen = 20;
   private lastTierChangeTime = Date.now();
   private minTierHoldMs = 5000; // Hysteresis hold time to prevent flapping
+  private isEmergencyCooling = false;
+  private emergencyCoolingStartTime = 0;
 
   private constructor() {
     super();
+    // Check CPU temperature every 5 seconds on SBC
+    setInterval(() => {
+      this.checkThermalGuard();
+    }, 5000);
   }
 
   public static getInstance(): LoadGovernor {
@@ -48,6 +58,54 @@ export class LoadGovernor extends EventEmitter {
       LoadGovernor.instance = new LoadGovernor();
     }
     return LoadGovernor.instance;
+  }
+
+  /**
+   * Checks CPU temperature on Linux SBC and activates thermal throttling if overheating.
+   */
+  public checkThermalGuard(): void {
+    const temp = getCpuTemperature();
+    if (temp === undefined) return;
+
+    const now = Date.now();
+
+    // Critical thermal threshold (default: >= 82°C) - Emergency AI Pause
+    if (temp >= SYSTEM_CONSTANTS.THERMAL_CRITICAL_TEMP) {
+      if (!this.isEmergencyCooling) {
+        this.isEmergencyCooling = true;
+        this.emergencyCoolingStartTime = now;
+        this.currentTier = 'EMERGENCY_COOLING';
+        logger.error(`🔥 [THERMAL CRITICAL] CPU Temperature reached ${temp.toFixed(1)}°C! Activating emergency AI cooldown to prevent STB shutdown.`);
+        this.emit('tierChanged', this.getMetrics());
+      }
+      return;
+    }
+
+    // Recover from Emergency Cooling when temp drops below recovery threshold (< 72°C)
+    if (this.isEmergencyCooling) {
+      if (temp <= SYSTEM_CONSTANTS.THERMAL_RECOVERY_TEMP && (now - this.emergencyCoolingStartTime > 10000)) {
+        this.isEmergencyCooling = false;
+        this.currentTier = 'ECO';
+        logger.info(`❄️ [THERMAL RECOVERY] CPU Temperature cooled down to ${temp.toFixed(1)}°C. Resuming AI in ECO mode.`);
+        this.emit('tierChanged', this.getMetrics());
+      }
+      return;
+    }
+
+    // Warning thermal threshold (default: >= 75°C) - Force ECO tier
+    if (temp >= SYSTEM_CONSTANTS.THERMAL_WARNING_TEMP && this.currentTier !== 'ECO') {
+      this.currentTier = 'ECO';
+      this.lastTierChangeTime = now;
+      logger.warn(`⚠️ [THERMAL WARNING] CPU Temperature is high (${temp.toFixed(1)}°C). Enforcing ECO tier to reduce heat.`);
+      this.emit('tierChanged', this.getMetrics());
+    }
+  }
+
+  /**
+   * Returns whether emergency thermal cooldown is active.
+   */
+  public isEmergencyCoolingActive(): boolean {
+    return this.isEmergencyCooling;
   }
 
   /**
@@ -61,11 +119,24 @@ export class LoadGovernor extends EventEmitter {
       this.latencyHistory.shift();
     }
 
+    if (this.isEmergencyCooling) return;
+
     const avg = this.getAverageLatency();
     const now = Date.now();
 
     // Only allow tier evaluation every minTierHoldMs to avoid oscillating
     if (now - this.lastTierChangeTime < this.minTierHoldMs) {
+      return;
+    }
+
+    // Check if high temp forces ECO
+    const temp = getCpuTemperature();
+    if (temp !== undefined && temp >= SYSTEM_CONSTANTS.THERMAL_WARNING_TEMP) {
+      if (this.currentTier !== 'ECO') {
+        this.currentTier = 'ECO';
+        this.lastTierChangeTime = now;
+        this.emit('tierChanged', this.getMetrics());
+      }
       return;
     }
 
@@ -142,12 +213,15 @@ export class LoadGovernor extends EventEmitter {
     let tierBadge = '🟢 Performance';
     let fps = 2.0;
 
-    if (this.currentTier === 'BALANCED') {
-      tierBadge = '🟡 Balanced';
-      fps = 1.5;
+    if (this.currentTier === 'EMERGENCY_COOLING') {
+      tierBadge = '🔥 Emergency Cooling';
+      fps = 0;
     } else if (this.currentTier === 'ECO') {
       tierBadge = '🔴 Eco / Potato';
       fps = 1.0;
+    } else if (this.currentTier === 'BALANCED') {
+      tierBadge = '🟡 Balanced';
+      fps = 1.5;
     }
 
     return {
@@ -158,7 +232,9 @@ export class LoadGovernor extends EventEmitter {
       samplingFps: fps,
       heartbeatIntervalMs: this.getHeartbeatIntervalMs(),
       burstCooldownMs: this.getBurstCooldownMs(),
-      memoryRssMb: memMb
+      memoryRssMb: memMb,
+      cpuTemp: getCpuTemperature(),
+      isEmergencyCooling: this.isEmergencyCooling
     };
   }
 }

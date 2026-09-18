@@ -33,8 +33,15 @@ export const SYSTEM_CONSTANTS = {
   MOTION_DETECT_WIDTH: 160,
   MOTION_DETECT_HEIGHT: 120,
 
-  // Stage 2: ONNX YOLOv8 input size (model expects 640×640 square)
+  // Stage 2: ONNX YOLOv8 input size options (supports 416×256 16:9 widescreen or 640×640)
   STAGE2_FRAME_SIZE: 640,
+  STAGE2_DEFAULT_WIDTH: 416,
+  STAGE2_DEFAULT_HEIGHT: 256,
+
+  // Thermal Guard for ARM STB (Amlogic S905X / H6 / RK3328 / RPi)
+  THERMAL_WARNING_TEMP: 75,   // °C: Trigger ECO mode (drop FPS, throttle heartbeat)
+  THERMAL_CRITICAL_TEMP: 82,  // °C: Emergency AI cooldown to prevent thermal shutdown
+  THERMAL_RECOVERY_TEMP: 72,  // °C: Resume normal performance tier
 
   STAGE1_MOTION_THRESHOLD_PERCENT: 0.2, // 0.2% pixel change triggers motion burst
   HEARTBEAT_AI_SCAN_INTERVAL_MS: 1000,  // Background AI scan every 1s for stationary object detection
