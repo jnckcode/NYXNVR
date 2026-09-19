@@ -47,7 +47,7 @@ export class EventRepository {
   public static getFiltered(filter: EventFilter): { total: number; events: AIEvent[] } {
     const db = getDatabase();
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: (string | number)[] = [];
 
     if (filter.cameraId) {
       conditions.push('camera_id = ?');

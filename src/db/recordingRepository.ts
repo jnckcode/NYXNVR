@@ -62,7 +62,7 @@ export class RecordingRepository {
   public static getFiltered(filter: RecordingFilter): { total: number; recordings: RecordingSegment[] } {
     const db = getDatabase();
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: (string | number)[] = [];
 
     if (filter.cameraId) {
       conditions.push('camera_id = ?');

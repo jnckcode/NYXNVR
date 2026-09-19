@@ -15,7 +15,7 @@
  * @dependencies child_process, fs, path, events, StorageManager, SettingsService, AIAnalyticsEngine, CameraRepository, logger
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, type StdioOptions } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import EventEmitter from 'events';
@@ -54,7 +54,6 @@ interface ActiveStream {
   bytesReceived: number;
   lastFrameTime: number;
   currentSegmentStartTime: number;
-  lastPeriodicAiScan?: number;
 }
 
 export class StreamManager extends EventEmitter {
@@ -248,7 +247,7 @@ export class StreamManager extends EventEmitter {
     logger.info(`Spawning FFmpeg for camera [${camera.name}] (${camera.id}) - AI: ${isAiEnabled ? 'ON' : 'OFF (Zero-Decode Passthrough)'}`);
 
     try {
-      const stdioOptions: any = isAiEnabled
+      const stdioOptions: StdioOptions = isAiEnabled
         ? ['ignore', 'pipe', 'pipe', 'pipe']
         : ['ignore', 'pipe', 'pipe', 'ignore'];
 
@@ -305,7 +304,7 @@ export class StreamManager extends EventEmitter {
       }
 
       // Handle Output 3: Stage 1 Motion Frame Buffer (pipe:3)
-      const motionStream = isAiEnabled && proc.stdio ? (proc.stdio[3] as any) : null;
+      const motionStream = isAiEnabled && proc.stdio && proc.stdio[3] ? (proc.stdio[3] as NodeJS.ReadableStream) : null;
       if (motionStream) {
         const frameSize = SYSTEM_CONSTANTS.STAGE1_FRAME_WIDTH * SYSTEM_CONSTANTS.STAGE1_FRAME_HEIGHT * 3;
 
@@ -396,8 +395,9 @@ export class StreamManager extends EventEmitter {
         logger.error(`FFmpeg spawn error for [${camera.name}]:`, err.message);
         this.handleStreamTermination(stream);
       });
-    } catch (err: any) {
-      logger.error(`Exception launching FFmpeg for [${camera.name}]:`, err.message);
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error(`Exception launching FFmpeg for [${camera.name}]:`, errorMsg);
       this.handleStreamTermination(stream);
     }
   }
@@ -531,12 +531,12 @@ export class StreamManager extends EventEmitter {
       if (client.readyState === WebSocket.OPEN) {
         // Skip clients with excessive send buffer backpressure (> 2MB queued)
         // This prevents one slow client from freezing the entire broadcast loop
-        if ((client as any).bufferedAmount > 2 * 1024 * 1024) {
+        if (client.bufferedAmount > 2 * 1024 * 1024) {
           continue;
         }
         try {
           client.send(chunk);
-        } catch (err) {
+        } catch {
           // Ignore socket send error
         }
       }

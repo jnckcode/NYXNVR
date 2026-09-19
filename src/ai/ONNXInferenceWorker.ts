@@ -7,7 +7,6 @@
 
 import { parentPort, isMainThread } from 'worker_threads';
 import fs from 'fs';
-import os from 'os';
 import jpeg from 'jpeg-js';
 import { COCO_CLASSES, TARGET_SECURITY_CLASSES } from '../config/constants';
 
@@ -20,9 +19,9 @@ let sessionInputHeight = 640;
 
 try {
   ort = require('onnxruntime-node');
-} catch (err: any) {
-  // Graceful fallback if onnxruntime-node binary is being compiled
-  console.warn('[ONNXWorker] onnxruntime-node library not loaded:', err.message);
+} catch (err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.warn('[ONNXWorker] onnxruntime-node library not loaded:', msg);
 }
 
 interface WorkerMessage {

@@ -6,7 +6,6 @@
  */
 
 import fs from 'fs';
-import path from 'path';
 import { DiskSpaceInfo } from '../types/settings';
 import { ensureDirExists, sanitizePath } from './pathSanitizer';
 

@@ -9,7 +9,7 @@ import { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
 import { AIAnalyticsEngine } from '../../ai/AIAnalyticsEngine';
 import { StreamManager } from '../../core/StreamManager';
-import { LoadGovernor } from '../../core/LoadGovernor';
+import { LoadGovernor, GovernorMetrics } from '../../core/LoadGovernor';
 import { createLogger } from '../../utils/logger';
 
 const logger = createLogger('EventStreamWS');
@@ -22,7 +22,7 @@ export async function registerEventStreamWs(server: FastifyInstance): Promise<vo
   const loadGovernor = LoadGovernor.getInstance();
 
   // Listen to AI detection alerts (distinct security events) and broadcast to clients
-  aiEngine.on('detectionEvent', (data: any) => {
+  aiEngine.on('detectionEvent', (data: Record<string, unknown>) => {
     broadcast({
       type: 'DETECTION_EVENT',
       ...data
@@ -30,7 +30,7 @@ export async function registerEventStreamWs(server: FastifyInstance): Promise<vo
   });
 
   // Listen to AI real-time bounding box overlay updates (live stream rendering)
-  aiEngine.on('detectionOverlay', (data: any) => {
+  aiEngine.on('detectionOverlay', (data: Record<string, unknown>) => {
     broadcast({
       type: 'DETECTION_OVERLAY',
       ...data
@@ -38,7 +38,7 @@ export async function registerEventStreamWs(server: FastifyInstance): Promise<vo
   });
 
   // Listen to Motion detected events
-  aiEngine.on('motionDetected', (data: any) => {
+  aiEngine.on('motionDetected', (data: Record<string, unknown>) => {
     broadcast({
       type: 'MOTION_DETECTED',
       ...data
@@ -46,7 +46,7 @@ export async function registerEventStreamWs(server: FastifyInstance): Promise<vo
   });
 
   // Listen to stream status changes
-  streamManager.on('streamStatusChanged', (data: any) => {
+  streamManager.on('streamStatusChanged', (data: Record<string, unknown>) => {
     broadcast({
       type: 'STREAM_STATUS_CHANGED',
       ...data
@@ -54,7 +54,7 @@ export async function registerEventStreamWs(server: FastifyInstance): Promise<vo
   });
 
   // Listen to Load Governor tier adjustments
-  loadGovernor.on('tierChanged', (metrics: any) => {
+  loadGovernor.on('tierChanged', (metrics: GovernorMetrics) => {
     broadcast({
       type: 'GOVERNOR_TIER_CHANGED',
       metrics
@@ -82,14 +82,14 @@ export async function registerEventStreamWs(server: FastifyInstance): Promise<vo
   });
 }
 
-function broadcast(payload: any): void {
+function broadcast(payload: Record<string, unknown>): void {
   const msg = JSON.stringify(payload);
   for (const client of connectedClients) {
     if (client.readyState === WebSocket.OPEN) {
       try {
         client.send(msg);
-      } catch (e) {
-        // Ignore
+      } catch {
+        // Ignore socket error
       }
     }
   }

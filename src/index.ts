@@ -11,6 +11,7 @@ import { SettingsService } from './core/SettingsService';
 import { StorageManager } from './core/StorageManager';
 import { RetentionWorker } from './core/RetentionWorker';
 import { StreamManager } from './core/StreamManager';
+import { CameraRepository } from './db/cameraRepository';
 import { startServer } from './api/server';
 import { createLogger } from './utils/logger';
 import { SYSTEM_CONSTANTS } from './config/constants';
@@ -35,8 +36,8 @@ async function bootstrap(): Promise<void> {
 
     // 2. Initialize Core Services
     logger.info('2. Initializing Core Services & Storage Directories...');
-    const settingsService = SettingsService.getInstance();
-    const storageManager = StorageManager.getInstance();
+    SettingsService.getInstance();
+    StorageManager.getInstance();
     const retentionWorker = RetentionWorker.getInstance();
     const streamManager = StreamManager.getInstance();
 
@@ -63,8 +64,8 @@ async function bootstrap(): Promise<void> {
     const shutdown = async (signal: string) => {
       logger.warn(`Received ${signal}. Initiating graceful shutdown...`);
       retentionWorker.stop();
-      
-      const cameras = require('./db/cameraRepository').CameraRepository.getAll();
+
+      const cameras = CameraRepository.getAll();
       for (const cam of cameras) {
         streamManager.stopCameraStream(cam.id);
       }
@@ -77,8 +78,9 @@ async function bootstrap(): Promise<void> {
 
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
-  } catch (err: any) {
-    logger.error('Fatal bootstrap error:', err);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.error('Fatal bootstrap error:', errorMsg);
     process.exit(1);
   }
 }

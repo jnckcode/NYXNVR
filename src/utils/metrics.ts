@@ -8,6 +8,7 @@
 import fs from 'fs';
 import os from 'os';
 import { SystemMetrics, ProcessMemoryInfo } from '../types/system';
+import { getPlatformInfo } from './platform';
 
 let lastCpuMeasure = {
   idle: 0,
@@ -21,10 +22,9 @@ function getCpuTimes(): { idle: number; total: number } {
   let total = 0;
 
   for (const cpu of cpus) {
-    for (const type in cpu.times) {
-      total += (cpu.times as any)[type];
-    }
-    idle += cpu.times.idle;
+    const { user, nice, sys, idle: cpuIdle, irq } = cpu.times;
+    total += user + nice + sys + cpuIdle + irq;
+    idle += cpuIdle;
   }
 
   return { idle, total };
@@ -90,7 +90,7 @@ export function getProcessMemoryMb(): ProcessMemoryInfo {
  * Returns temperature in Celsius (e.g., 55.4) or undefined if not available.
  */
 export function getCpuTemperature(): number | undefined {
-  if (os.platform() === 'linux') {
+  if (getPlatformInfo().isLinux) {
     const thermalPaths = [
       '/sys/class/thermal/thermal_zone0/temp',
       '/sys/class/thermal/thermal_zone1/temp',
@@ -124,11 +124,12 @@ export function getSystemMetrics(activeStreamsCount: number = 0, activeAICount: 
   const cpus = os.cpus();
   const totalMemMb = Math.round(os.totalmem() / (1024 * 1024));
   let freeMemMb = Math.round(os.freemem() / (1024 * 1024));
+  const platformInfo = getPlatformInfo();
 
   // Linux kernel page-cache awareness:
   // os.freemem() only returns raw MemFree (ignoring reclaimable disk page buffers).
   // Reading MemAvailable from /proc/meminfo gives the true usable RAM.
-  if (os.platform() === 'linux') {
+  if (platformInfo.isLinux) {
     try {
       const meminfo = fs.readFileSync('/proc/meminfo', 'utf-8');
       const match = meminfo.match(/MemAvailable:\s+(\d+)\s+kB/);
@@ -147,8 +148,8 @@ export function getSystemMetrics(activeStreamsCount: number = 0, activeAICount: 
 
   return {
     uptimeSeconds: Math.round(process.uptime()),
-    platform: os.platform(),
-    arch: os.arch(),
+    platform: platformInfo.platform,
+    arch: platformInfo.arch,
     cpuModel: cpus.length > 0 ? cpus[0].model : 'ARM Cortex-A53',
     cpuCores: cpus.length,
     cpuUsagePercent: processCpu, // Default CPU metric focuses on NVR Node process footprint

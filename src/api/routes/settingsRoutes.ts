@@ -7,10 +7,12 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { SettingsService } from '../../core/SettingsService';
+import { RetentionWorker } from '../../core/RetentionWorker';
 import { SystemSettingsMap } from '../../types/settings';
 
 export async function registerSettingsRoutes(server: FastifyInstance): Promise<void> {
   const settingsService = SettingsService.getInstance();
+  const retentionWorker = RetentionWorker.getInstance();
 
   // Get current system settings + disk capacity metrics
   server.get('/api/v1/settings', async (_req: FastifyRequest, reply: FastifyReply) => {
@@ -34,18 +36,17 @@ export async function registerSettingsRoutes(server: FastifyInstance): Promise<v
         settings: updated,
         disk
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
       return reply.code(400).send({
         success: false,
-        error: err.message
+        error: errorMsg
       });
     }
   });
 
   // Get auto-delete retention policy status, stats, and oldest recording
   server.get('/api/v1/storage/retention-status', async (_req: FastifyRequest, reply: FastifyReply) => {
-    const { RetentionWorker } = await import('../../core/RetentionWorker');
-    const retentionWorker = RetentionWorker.getInstance();
     const status = retentionWorker.getRetentionStatus();
     const disk = settingsService.getDiskInfo();
 
@@ -59,8 +60,6 @@ export async function registerSettingsRoutes(server: FastifyInstance): Promise<v
   // Manually trigger an immediate retention cleanup cycle
   server.post('/api/v1/storage/purge', async (_req: FastifyRequest, reply: FastifyReply) => {
     try {
-      const { RetentionWorker } = await import('../../core/RetentionWorker');
-      const retentionWorker = RetentionWorker.getInstance();
       const result = await retentionWorker.executeRetentionCycle(true);
       const disk = settingsService.getDiskInfo();
 
@@ -70,10 +69,11 @@ export async function registerSettingsRoutes(server: FastifyInstance): Promise<v
         result,
         disk
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
       return reply.code(500).send({
         success: false,
-        error: err.message
+        error: errorMsg
       });
     }
   });
