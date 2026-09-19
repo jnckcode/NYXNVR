@@ -15,9 +15,9 @@ import argparse
 def quantize_model(input_path: str, output_path: str, weight_type_str: str = "QUInt8"):
     try:
         from onnxruntime.quantization import quantize_dynamic, QuantType
-    except ImportError:
-        print("\n[ERROR] onnxruntime is not installed!")
-        print("Install it with: pip install onnxruntime\n")
+    except ImportError as e:
+        print(f"\n[ERROR] Required Python packages are missing: {e}")
+        print("Install them with: pip install onnx onnxruntime\n")
         sys.exit(1)
 
     if not os.path.exists(input_path):

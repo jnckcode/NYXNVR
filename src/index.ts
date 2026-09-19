@@ -14,14 +14,18 @@ import { StreamManager } from './core/StreamManager';
 import { startServer } from './api/server';
 import { createLogger } from './utils/logger';
 import { SYSTEM_CONSTANTS } from './config/constants';
+import { getPlatformInfo, getFfmpegCapabilities } from './utils/platform';
 
 const logger = createLogger('Bootstrap');
 
 async function bootstrap(): Promise<void> {
+  const platform = getPlatformInfo();
+  const ffmpegCaps = getFfmpegCapabilities();
+
   logger.info('====================================================');
   logger.info(`   ${SYSTEM_CONSTANTS.APP_NAME} v${SYSTEM_CONSTANTS.APP_VERSION} INITIALIZING`);
-  logger.info('   Optimized: Lightweight | Stable | High Accuracy');
-  logger.info('   Target Hardware: ARM64 STB HG680-P (RAM 2GB)');
+  logger.info(`   Host OS: ${platform.distro} (${platform.arch})`);
+  logger.info(`   FFmpeg : v${ffmpegCaps.version} (RTSP timeout flag: ${ffmpegCaps.rtspTimeoutFlag})`);
   logger.info('====================================================');
 
   try {

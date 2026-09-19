@@ -29,6 +29,7 @@ import { CameraRepository } from '../db/cameraRepository';
 import { createLogger } from '../utils/logger';
 import { SYSTEM_CONSTANTS } from '../config/constants';
 import { ensureDirExists } from '../utils/pathSanitizer';
+import { buildFfmpegRtspInputArgs, getFfmpegCapabilities } from '../utils/platform';
 
 const logger = createLogger('StreamManager');
 
@@ -202,24 +203,7 @@ export class StreamManager extends EventEmitter {
 
     const isRtsp = camera.rtsp_url.startsWith('rtsp://') || camera.rtsp_url.startsWith('rtsps://');
     
-    const inputArgs: string[] = [];
-    if (isRtsp) {
-      inputArgs.push(
-        '-rtsp_transport', 'tcp',
-        '-stimeout', '10000000',          // 10s TCP timeout (-stimeout in microseconds is universal for FFmpeg 4.x/5.x/6.x/7.x)
-        '-fflags', '+genpts+discardcorrupt+nobuffer', // nobuffer for low-latency
-        '-flags', 'low_delay',           // Minimize decode latency
-        '-use_wallclock_as_timestamps', '1',
-        '-analyzeduration', '2000000',   // 2s analyze (was 5s - faster stream start)
-        '-probesize', '2000000',         // 2MB probe (was 5MB - faster initial connect)
-        '-max_delay', '500000',          // 500ms demuxer jitter headroom
-        '-reorder_queue_size', '16'      // Small reorder queue to reduce latency
-      );
-    } else {
-      inputArgs.push('-re');
-    }
-    inputArgs.push('-i', camera.rtsp_url);
-
+    const inputArgs = buildFfmpegRtspInputArgs(camera.rtsp_url);
     const segmentDuration = SYSTEM_CONSTANTS.DEFAULT_SEGMENT_DURATION_SECONDS;
 
     const ffmpegArgs = [
@@ -249,10 +233,11 @@ export class StreamManager extends EventEmitter {
     // Output 3: Stage 1 Motion Frames (only if AI enabled)
     const isAiEnabled = camera.ai_enabled === 1;
     if (isAiEnabled) {
+      const caps = getFfmpegCapabilities();
       ffmpegArgs.push(
         '-map', '0:v:0',
-        '-threads', '1',
-        '-filter_threads', '1',
+        '-threads', String(caps.optimalThreads),
+        '-filter_threads', String(caps.optimalThreads),
         '-vf', `fps=2,scale=${SYSTEM_CONSTANTS.STAGE1_FRAME_WIDTH}:${SYSTEM_CONSTANTS.STAGE1_FRAME_HEIGHT}`,
         '-f', 'rawvideo',
         '-pix_fmt', 'rgb24',
