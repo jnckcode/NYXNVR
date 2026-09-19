@@ -82,8 +82,11 @@ ehthumbs.db
 *.md
 **/*.md
 
-# Kecualikan README.md (case-insensitive)
+# Kecualikan README.md & SIMULATOR_TUTORIAL.md
 !README.md
 !readme.md
 !**/README.md
 !**/readme.md
+!SIMULATOR_TUTORIAL.md
+!**/SIMULATOR_TUTORIAL.md
+!docs/**/*.md
